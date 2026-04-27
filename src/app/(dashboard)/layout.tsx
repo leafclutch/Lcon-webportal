@@ -7,5 +7,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!user) redirect('/login')
 
+  const { data: profile } = await supabase
+    .from('users')
+    .select('is_approved')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile?.is_approved) redirect('/pending-approval')
+
   return <>{children}</>
 }

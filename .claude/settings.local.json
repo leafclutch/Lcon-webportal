@@ -10,7 +10,10 @@
       "Read(//tmp/**)",
       "Bash(npm show *)",
       "Bash(npm install *)",
-      "Bash(npx opennextjs-cloudflare *)"
+      "Bash(npx opennextjs-cloudflare *)",
+      "Bash(./node_modules/.bin/next build *)",
+      "Bash(npx --prefix /home/sid/leafclutch/Lcon-webportal tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

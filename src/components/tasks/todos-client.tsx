@@ -7,7 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
 import { Avatar } from '@/components/ui/avatar'
+import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
 import { createTodo, updateTodoStatus, deleteTodo } from '@/actions/todos'
+import { saveAttachments } from '@/actions/attachments'
 import { statusColor } from '@/lib/utils'
 import { Plus, Trash2, CheckCircle2, Circle, Loader2 } from 'lucide-react'
 
@@ -17,18 +19,48 @@ interface Todo {
   users: { id: string; name: string; avatar_url: string | null } | null
 }
 
-export function TodosClient({ todos, currentUserId, canViewAll }: { todos: Todo[]; currentUserId: string; canViewAll: boolean }) {
+export function TodosClient({ todos, currentUserId, canViewAll, canUpload }: {
+  todos: Todo[]; currentUserId: string; canViewAll: boolean; canUpload: boolean
+}) {
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '' })
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  const resetModal = () => {
+    setShowModal(false)
+    setTitle('')
+    setDescription('')
+    setAttachments([])
+    setError(null)
+  }
+
   const handleCreate = () => {
-    if (!form.title) { setError('Title is required'); return }
+    if (!title) { setError('Title is required'); return }
+    if (attachments.some(a => a.uploading)) return
+
     startTransition(async () => {
-      const res = await createTodo({ title: form.title, description: form.description || undefined, user_id: currentUserId })
-      if (res.success) { setShowModal(false); setForm({ title: '', description: '' }) }
-      else setError(res.error)
+      const res = await createTodo({ title, description: description || undefined, user_id: currentUserId })
+      if (res.success) {
+        if (attachments.length) {
+          await saveAttachments(
+            attachments.map(a => ({
+              entity_type: 'todo' as const,
+              entity_id: res.data.id,
+              type: a.type,
+              name: a.name,
+              url: a.url,
+              mime_type: a.mimeType,
+              size_bytes: a.sizeBytes,
+            }))
+          )
+        }
+        resetModal()
+      } else {
+        setError(res.error)
+      }
     })
   }
 
@@ -43,6 +75,7 @@ export function TodosClient({ todos, currentUserId, canViewAll }: { todos: Todo[
 
   const pending = todos.filter(t => t.status !== 'completed')
   const completed = todos.filter(t => t.status === 'completed')
+  const canSend = !!title && !attachments.some(a => a.uploading)
 
   return (
     <div className="space-y-4">
@@ -75,14 +108,29 @@ export function TodosClient({ todos, currentUserId, canViewAll }: { todos: Todo[
         </>
       )}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="New Todo">
+      <Modal open={showModal} onClose={resetModal} title="New Todo">
         <div className="space-y-4">
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
-          <Input label="Title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="What needs to be done?" />
-          <Textarea label="Notes" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional details..." />
+          <Input label="Title" value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs to be done?" />
+          {canUpload ? (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Notes &amp; Attachments</label>
+              <RichInput
+                value={description}
+                onChange={setDescription}
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
+                placeholder="Optional details, files, or links…"
+                disabled={isPending}
+                rows={3}
+              />
+            </div>
+          ) : (
+            <Textarea label="Notes" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional details..." />
+          )}
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setShowModal(false)} className="flex-1">Cancel</Button>
-            <Button onClick={handleCreate} loading={isPending} className="flex-1">Create</Button>
+            <Button variant="outline" onClick={resetModal} className="flex-1">Cancel</Button>
+            <Button onClick={handleCreate} loading={isPending} disabled={!canSend} className="flex-1">Create</Button>
           </div>
         </div>
       </Modal>

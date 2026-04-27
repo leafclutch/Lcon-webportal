@@ -15,13 +15,12 @@ export function useAuth() {
     const fetchUser = async (userId: string) => {
       const { data: profile } = await supabase
         .from('users')
-        .select('id, name, email, role_id, avatar_url')
+        .select('id, name, email, role_id, avatar_url, is_approved, last_active_at')
         .eq('id', userId)
         .single()
 
       if (!profile) { clearUser(); return }
 
-      // Fetch role
       let role: { id: string; name: string } | null = null
       if (profile.role_id) {
         const { data: roleData } = await supabase
@@ -32,7 +31,6 @@ export function useAuth() {
         role = roleData
       }
 
-      // Fetch permissions via role_id
       let permissions: PermissionName[] = []
       if (profile.role_id) {
         const { data: rp } = await supabase
@@ -57,6 +55,8 @@ export function useAuth() {
         role,
         permissions,
         avatar_url: profile.avatar_url,
+        is_approved: profile.is_approved,
+        last_active_at: profile.last_active_at,
       })
     }
 

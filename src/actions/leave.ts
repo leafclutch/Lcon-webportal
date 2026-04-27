@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/permissions'
+import { createNotification } from '@/lib/notifications'
 import { revalidatePath } from 'next/cache'
 import type { ActionResult } from '@/types'
 
@@ -40,6 +41,12 @@ export async function reviewLeaveRequest(
     return { success: false, error: 'You do not have permission to approve leave requests' }
   }
 
+  const { data: leave } = await supabase
+    .from('leave_requests')
+    .select('user_id, start_date, end_date')
+    .eq('id', leaveId)
+    .single()
+
   const { error } = await supabase.from('leave_requests').update({
     status,
     approved_by: user.id,
@@ -47,6 +54,19 @@ export async function reviewLeaveRequest(
   }).eq('id', leaveId)
 
   if (error) return { success: false, error: error.message }
+
+  if (leave) {
+    const label = status === 'approved' ? '✅ approved' : '❌ rejected'
+    await createNotification({
+      user_id: leave.user_id,
+      title: `Leave request ${label}`,
+      body: `Your leave from ${leave.start_date} to ${leave.end_date} was ${status}.`,
+      type: 'leave',
+      entity_type: 'leave_request',
+      entity_id: leaveId,
+    })
+  }
+
   revalidatePath('/leave')
   return { success: true, data: undefined }
 }

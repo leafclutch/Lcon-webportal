@@ -18,7 +18,6 @@ export async function generateAttendanceCode(
     return { success: false, error: 'You do not have permission to generate attendance codes' }
   }
 
-  // Deactivate previous active code of same type for today
   await supabase
     .from('attendance_codes')
     .update({ is_active: false })
@@ -43,14 +42,11 @@ export async function generateAttendanceCode(
   return { success: true, data: { code } }
 }
 
-export async function markAttendance(
-  code: string
-): Promise<ActionResult<void>> {
+export async function markAttendance(code: string): Promise<ActionResult<void>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
 
-  // Validate code
   const { data: attendanceCode } = await supabase
     .from('attendance_codes')
     .select('*')
@@ -85,7 +81,6 @@ export async function markAttendance(
   } else {
     if (!existingLog?.tap_in_time) return { success: false, error: 'Must tap in before tapping out' }
     if (existingLog?.tap_out_time) return { success: false, error: 'Already tapped out today' }
-
     await supabase.from('attendance_logs').update({ tap_out_time: now }).eq('id', existingLog.id)
   }
 
@@ -110,18 +105,98 @@ export async function getAttendanceLogs(userId?: string) {
   return data ?? []
 }
 
-export async function getAllAttendanceLogs(date?: string) {
+export async function getAllAttendanceLogs(filters?: {
+  userId?: string
+  startDate?: string
+  endDate?: string
+  status?: string
+}) {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user?.permissions.includes('view_all_attendance')) return []
 
   let query = supabase
     .from('attendance_logs')
-    .select('*, users(name, email, avatar_url)')
+    .select('*, users(id, name, email, avatar_url)')
     .order('date', { ascending: false })
 
-  if (date) query = query.eq('date', date)
+  type Status = 'present' | 'late' | 'absent' | 'half_day'
 
-  const { data } = await query.limit(100)
-  return data ?? []
+  if (filters?.userId) query = query.eq('user_id', filters.userId)
+  if (filters?.startDate) query = query.gte('date', filters.startDate)
+  if (filters?.endDate) query = query.lte('date', filters.endDate)
+  if (filters?.status) query = query.eq('status', filters.status as Status)
+
+  // Cast via unknown — the join is valid at runtime but the SDK types lack the relationship mapping
+  const { data } = await query.limit(200)
+  return (data ?? []) as unknown as AllLog[]
+}
+
+export interface AllLog {
+  id: string; user_id: string; date: string; status: string;
+  tap_in_time: string | null; tap_out_time: string | null;
+  created_at: string; updated_at: string;
+  users?: { id: string; name: string; email: string; avatar_url: string | null } | null
+}
+
+export async function exportAttendanceCsv(filters?: {
+  userId?: string
+  startDate?: string
+  endDate?: string
+  status?: string
+}): Promise<ActionResult<{ csv: string; filename: string }>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user?.permissions.includes('export_attendance')) {
+    return { success: false, error: 'Permission denied' }
+  }
+
+  type Status = 'present' | 'late' | 'absent' | 'half_day'
+  let query = supabase
+    .from('attendance_logs')
+    .select('date, status, tap_in_time, tap_out_time, user_id')
+    .order('date', { ascending: false })
+
+  if (filters?.userId) query = query.eq('user_id', filters.userId)
+  if (filters?.startDate) query = query.gte('date', filters.startDate)
+  if (filters?.endDate) query = query.lte('date', filters.endDate)
+  if (filters?.status) query = query.eq('status', filters.status as Status)
+
+  const { data: logs, error } = await query.limit(2000)
+  if (error) return { success: false, error: error.message }
+
+  // Fetch user names separately to avoid join type issues
+  const userIds = [...new Set((logs ?? []).map(l => l.user_id))]
+  const userMap: Record<string, { name: string; email: string }> = {}
+  if (userIds.length) {
+    const { data: usersData } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .in('id', userIds)
+    for (const u of usersData ?? []) userMap[u.id] = u
+  }
+
+  const rows = logs ?? []
+  const headers = ['Date', 'Name', 'Email', 'Tap In', 'Tap Out', 'Status']
+
+  const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`
+
+  const csvRows = rows.map(log => {
+    const u = userMap[log.user_id]
+    return [
+      log.date,
+      u?.name ?? '',
+      u?.email ?? '',
+      log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '',
+      log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '',
+      log.status,
+    ].map(escape).join(',')
+  })
+
+  const csv = [headers.map(escape).join(','), ...csvRows].join('\n')
+  const start = filters?.startDate ?? 'all'
+  const end = filters?.endDate ?? 'all'
+  const filename = `attendance_${start}_to_${end}.csv`
+
+  return { success: true, data: { csv, filename } }
 }

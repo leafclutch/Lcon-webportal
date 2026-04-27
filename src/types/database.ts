@@ -11,6 +11,8 @@ export interface Database {
           email: string
           role_id: string | null
           avatar_url: string | null
+          is_approved: boolean
+          last_active_at: string | null
           created_at: string
           updated_at: string
         }
@@ -20,12 +22,16 @@ export interface Database {
           email: string
           role_id?: string | null
           avatar_url?: string | null
+          is_approved?: boolean
+          last_active_at?: string | null
         }
         Update: {
           name?: string
           email?: string
           role_id?: string | null
           avatar_url?: string | null
+          is_approved?: boolean
+          last_active_at?: string | null
         }
         Relationships: []
       }
@@ -194,6 +200,38 @@ export interface Database {
         Update: { content?: string; likes?: number }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          id: string; user_id: string; title: string; body: string | null;
+          type: 'message' | 'task' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system';
+          entity_type: string | null; entity_id: string | null;
+          is_read: boolean; created_at: string
+        }
+        Insert: {
+          user_id: string; title: string; body?: string | null;
+          type: 'message' | 'task' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system';
+          entity_type?: string | null; entity_id?: string | null; is_read?: boolean
+        }
+        Update: { is_read?: boolean }
+        Relationships: []
+      }
+      attachments: {
+        Row: {
+          id: string; uploaded_by: string;
+          entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea';
+          entity_id: string; type: 'file' | 'voice' | 'link' | 'image';
+          name: string | null; url: string; size_bytes: number | null;
+          mime_type: string | null; created_at: string
+        }
+        Insert: {
+          uploaded_by: string;
+          entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea';
+          entity_id: string; type: 'file' | 'voice' | 'link' | 'image';
+          name?: string | null; url: string; size_bytes?: number | null; mime_type?: string | null
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -224,6 +262,8 @@ export type Project = Database['public']['Tables']['projects']['Row']
 export type ProjectMember = Database['public']['Tables']['project_members']['Row']
 export type DailyUpdate = Database['public']['Tables']['daily_updates']['Row']
 export type Idea = Database['public']['Tables']['ideas']['Row']
+export type Notification = Database['public']['Tables']['notifications']['Row']
+export type Attachment = Database['public']['Tables']['attachments']['Row']
 
 // Extended types with joins
 export type UserWithRole = User & { roles: Role | null }

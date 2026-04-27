@@ -30,7 +30,12 @@ export default async function TodosPage() {
 
   return (
     <DashboardShell title="Todos">
-      <TodosClient todos={todos} currentUserId={user?.id ?? ''} canViewAll={viewAll} />
+      <TodosClient
+        todos={todos}
+        currentUserId={user?.id ?? ''}
+        canViewAll={viewAll}
+        canUpload={user?.permissions.includes('upload_attachments') ?? false}
+      />
     </DashboardShell>
   )
 }

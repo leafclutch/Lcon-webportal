@@ -14,6 +14,16 @@ export type PermissionName =
   | 'issue_warning'
   | 'manage_projects'
   | 'view_reports'
+  // Added in upgrade 004
+  | 'delete_user'
+  | 'approve_users'
+  | 'upload_attachments'
+  | 'send_message'
+  | 'view_activity_status'
+  | 'export_attendance'
+  | 'verify_attendance_external'
+  | 'view_daily_updates'
+  | 'issue_auto_warning'
 
 export interface AuthUser {
   id: string
@@ -25,6 +35,8 @@ export interface AuthUser {
   } | null
   permissions: PermissionName[]
   avatar_url: string | null
+  is_approved: boolean
+  last_active_at: string | null
 }
 
 export interface NavItem {
@@ -32,6 +44,7 @@ export interface NavItem {
   href: string
   icon: string
   permission?: PermissionName
+  always?: boolean
 }
 
 export type ActionResult<T = void> =

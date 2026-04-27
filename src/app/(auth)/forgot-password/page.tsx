@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,16 +9,17 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { CheckCircle2 } from 'lucide-react'
 
 const schema = z.object({
   email: z.string().email('Enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
 })
 type FormData = z.infer<typeof schema>
 
-export default function LoginPage() {
-  const router = useRouter()
+export default function ForgotPasswordPage() {
+  const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
@@ -27,10 +27,29 @@ export default function LoginPage() {
   const onSubmit = async (data: FormData) => {
     setError(null)
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword(data)
+    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
     if (error) { setError(error.message); return }
-    router.push('/dashboard')
-    router.refresh()
+    setSent(true)
+  }
+
+  if (sent) {
+    return (
+      <Card className="w-full max-w-md shadow-xl">
+        <CardContent className="py-10 text-center">
+          <CheckCircle2 className="mx-auto mb-4 h-12 w-12 text-green-500" />
+          <h2 className="mb-2 text-xl font-semibold">Check your email</h2>
+          <p className="text-sm text-gray-500">
+            We sent a password reset link to your email address.
+            The link expires in 1 hour.
+          </p>
+          <Link href="/login" className="mt-6 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500">
+            Back to sign in
+          </Link>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -39,15 +58,13 @@ export default function LoginPage() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-bold text-white">
           LC
         </div>
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to LCON Portal</CardDescription>
+        <CardTitle className="text-2xl">Reset password</CardTitle>
+        <CardDescription>Enter your email and we&apos;ll send a reset link</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {error && (
-            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
-              {error}
-            </div>
+            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
           )}
           <Input
             label="Email"
@@ -56,28 +73,14 @@ export default function LoginPage() {
             error={errors.email?.message}
             {...register('email')}
           />
-          <div className="space-y-1">
-            <Input
-              label="Password"
-              type="password"
-              placeholder="••••••••"
-              error={errors.password?.message}
-              {...register('password')}
-            />
-            <div className="text-right">
-              <Link href="/forgot-password" className="text-xs text-indigo-600 hover:text-indigo-500">
-                Forgot password?
-              </Link>
-            </div>
-          </div>
           <Button type="submit" className="w-full" loading={isSubmitting}>
-            Sign in
+            Send reset link
           </Button>
         </form>
         <p className="mt-6 text-center text-sm text-gray-500">
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" className="font-medium text-indigo-600 hover:text-indigo-500">
-            Sign up
+          Remember your password?{' '}
+          <Link href="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            Sign in
           </Link>
         </p>
       </CardContent>

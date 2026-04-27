@@ -5,28 +5,36 @@ import { getCurrentUser } from '@/lib/auth/permissions'
 import { revalidatePath } from 'next/cache'
 import type { ActionResult } from '@/types'
 
-export async function postDailyUpdate(content: string): Promise<ActionResult<void>> {
+export async function postDailyUpdate(content: string): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
 
-  const { error } = await supabase.from('daily_updates').insert({ user_id: user.id, content })
+  const { data: row, error } = await supabase
+    .from('daily_updates')
+    .insert({ user_id: user.id, content })
+    .select('id')
+    .single()
   if (error) return { success: false, error: error.message }
 
   revalidatePath('/updates')
-  return { success: true, data: undefined }
+  return { success: true, data: { id: row.id } }
 }
 
-export async function postIdea(content: string): Promise<ActionResult<void>> {
+export async function postIdea(content: string): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
 
-  const { error } = await supabase.from('ideas').insert({ user_id: user.id, content })
+  const { data: row, error } = await supabase
+    .from('ideas')
+    .insert({ user_id: user.id, content })
+    .select('id')
+    .single()
   if (error) return { success: false, error: error.message }
 
   revalidatePath('/ideas')
-  return { success: true, data: undefined }
+  return { success: true, data: { id: row.id } }
 }
 
 export async function deleteUpdate(id: string): Promise<ActionResult<void>> {

@@ -8,7 +8,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
   const { data: profile } = await supabase
     .from('users')
-    .select('id, name, email, role_id, avatar_url')
+    .select('id, name, email, role_id, avatar_url, is_approved, last_active_at')
     .eq('id', user.id)
     .single()
 
@@ -48,6 +48,8 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     role,
     permissions,
     avatar_url: profile.avatar_url,
+    is_approved: profile.is_approved,
+    last_active_at: profile.last_active_at,
   }
 }
 

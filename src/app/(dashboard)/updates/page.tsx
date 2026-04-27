@@ -32,6 +32,7 @@ export default async function UpdatesPage() {
         type="update"
         placeholder="What did you work on today?"
         emptyText="No updates posted today"
+        canUpload={user?.permissions.includes('upload_attachments') ?? false}
       />
     </DashboardShell>
   )

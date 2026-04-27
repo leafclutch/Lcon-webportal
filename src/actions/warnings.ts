@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/permissions'
+import { createNotification } from '@/lib/notifications'
 import { revalidatePath } from 'next/cache'
 import type { ActionResult } from '@/types'
 
@@ -16,13 +17,23 @@ export async function issueWarning(input: {
     return { success: false, error: 'You do not have permission to issue warnings' }
   }
 
-  const { error } = await supabase.from('warnings').insert({
-    user_id: input.user_id,
-    issued_by: user.id,
-    reason: input.reason,
-  })
+  const { data: warning, error } = await supabase
+    .from('warnings')
+    .insert({ user_id: input.user_id, issued_by: user.id, reason: input.reason })
+    .select('id')
+    .single()
 
   if (error) return { success: false, error: error.message }
+
+  await createNotification({
+    user_id: input.user_id,
+    title: 'Warning issued',
+    body: input.reason,
+    type: 'warning',
+    entity_type: 'warning',
+    entity_id: warning.id,
+  })
+
   revalidatePath('/warnings')
   return { success: true, data: undefined }
 }

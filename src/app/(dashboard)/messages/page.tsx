@@ -23,14 +23,36 @@ export default async function MessagesPage() {
     : { data: [] }
   const senderMap = Object.fromEntries((senders ?? []).map(u => [u.id, u]))
 
+  // Fetch file/link attachments for loaded messages
+  const messageIds = (rawMessages ?? []).map(m => m.id)
+  const { data: attachments } = messageIds.length
+    ? await supabase
+        .from('attachments')
+        .select('id, entity_id, type, name, url, mime_type')
+        .eq('entity_type', 'message')
+        .in('entity_id', messageIds)
+    : { data: [] }
+
+  const attachmentsByMsgId: Record<string, typeof attachments> = {}
+  for (const a of attachments ?? []) {
+    if (!attachmentsByMsgId[a.entity_id]) attachmentsByMsgId[a.entity_id] = []
+    attachmentsByMsgId[a.entity_id]!.push(a)
+  }
+
   const messages = (rawMessages ?? []).map(m => ({
     ...m,
     sender: senderMap[m.sender_id] ?? { id: m.sender_id, name: 'Unknown', avatar_url: null },
+    attachments: attachmentsByMsgId[m.id] ?? [],
   }))
 
   return (
     <DashboardShell title="Messages">
-      <MessagesClient users={users ?? []} messages={messages} currentUserId={user?.id ?? ''} />
+      <MessagesClient
+        users={users ?? []}
+        messages={messages}
+        currentUserId={user?.id ?? ''}
+        canUpload={user?.permissions.includes('upload_attachments') ?? false}
+      />
     </DashboardShell>
   )
 }

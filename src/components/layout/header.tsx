@@ -1,8 +1,9 @@
 'use client'
 
-import { Menu, Bell } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Avatar } from '@/components/ui/avatar'
+import { NotificationBell } from '@/components/layout/notification-bell'
 
 interface HeaderProps {
   onMenuToggle: () => void
@@ -25,9 +26,7 @@ export function Header({ onMenuToggle, title }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-3">
-        <button className="relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-100">
-          <Bell size={20} />
-        </button>
+        <NotificationBell userId={user?.id} />
         {user && <Avatar name={user.name} src={user.avatar_url} size="sm" />}
       </div>
     </header>

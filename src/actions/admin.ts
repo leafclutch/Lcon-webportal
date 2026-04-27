@@ -12,7 +12,62 @@ export async function assignRole(userId: string, roleId: string): Promise<Action
     return { success: false, error: 'Permission denied' }
   }
 
-  const { error } = await supabase.from('users').update({ role_id: roleId }).eq('id', userId)
+  const update = roleId ? { role_id: roleId } : { role_id: null as unknown as string }
+  const { error } = await supabase.from('users').update(update).eq('id', userId)
+  if (error) return { success: false, error: error.message }
+
+  revalidatePath('/admin/users')
+  return { success: true, data: undefined }
+}
+
+export async function approveUser(userId: string): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user?.permissions.includes('approve_users')) {
+    return { success: false, error: 'Permission denied' }
+  }
+
+  const { error } = await supabase
+    .from('users')
+    .update({ is_approved: true })
+    .eq('id', userId)
+
+  if (error) return { success: false, error: error.message }
+  revalidatePath('/admin/users')
+  return { success: true, data: undefined }
+}
+
+export async function rejectUser(userId: string): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user?.permissions.includes('approve_users')) {
+    return { success: false, error: 'Permission denied' }
+  }
+
+  const { error } = await supabase
+    .from('users')
+    .update({ is_approved: false })
+    .eq('id', userId)
+
+  if (error) return { success: false, error: error.message }
+  revalidatePath('/admin/users')
+  return { success: true, data: undefined }
+}
+
+export async function deleteUser(userId: string): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user?.permissions.includes('delete_user')) {
+    return { success: false, error: 'Permission denied' }
+  }
+  if (userId === user.id) {
+    return { success: false, error: 'Cannot delete your own account' }
+  }
+
+  // Deleting from public.users cascades to all related data.
+  // The auth.users entry is orphaned — user cannot access the system
+  // because getCurrentUser returns null without a public.users profile.
+  const { error } = await supabase.from('users').delete().eq('id', userId)
   if (error) return { success: false, error: error.message }
 
   revalidatePath('/admin/users')
@@ -47,7 +102,6 @@ export async function updateRolePermissions(
     return { success: false, error: 'Permission denied' }
   }
 
-  // Remove existing
   await supabase.from('role_permissions').delete().eq('role_id', roleId)
 
   if (permissionIds.length > 0) {
@@ -75,7 +129,10 @@ export async function deleteRole(roleId: string): Promise<ActionResult<void>> {
   return { success: true, data: undefined }
 }
 
-export async function updateUserProfile(userId: string, data: { name?: string; avatar_url?: string }): Promise<ActionResult<void>> {
+export async function updateUserProfile(
+  userId: string,
+  data: { name?: string; avatar_url?: string }
+): Promise<ActionResult<void>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }

@@ -2,13 +2,14 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/permissions'
+import { createNotificationsForAllUsers } from '@/lib/notifications'
 import { revalidatePath } from 'next/cache'
 import type { ActionResult } from '@/types'
 
 export async function createAnnouncement(input: {
   title: string
   content: string
-}): Promise<ActionResult<void>> {
+}): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
@@ -16,14 +17,27 @@ export async function createAnnouncement(input: {
     return { success: false, error: 'You do not have permission to send announcements' }
   }
 
-  const { error } = await supabase.from('announcements').insert({
-    ...input,
-    created_by: user.id,
-  })
-
+  const { data: ann, error } = await supabase
+    .from('announcements')
+    .insert({ ...input, created_by: user.id })
+    .select('id')
+    .single()
   if (error) return { success: false, error: error.message }
+
+  // Notify all approved users except the creator
+  await createNotificationsForAllUsers(
+    {
+      title: `📢 ${input.title}`,
+      body: input.content.slice(0, 120),
+      type: 'announcement',
+      entity_type: 'announcement',
+      entity_id: ann.id,
+    },
+    user.id
+  )
+
   revalidatePath('/announcements')
-  return { success: true, data: undefined }
+  return { success: true, data: { id: ann.id } }
 }
 
 export async function deleteAnnouncement(id: string): Promise<ActionResult<void>> {

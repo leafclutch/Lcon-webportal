@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/permissions'
+import { createNotification } from '@/lib/notifications'
 import { revalidatePath } from 'next/cache'
 import type { ActionResult } from '@/types'
 
@@ -21,13 +22,26 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult<v
     return { success: false, error: 'You do not have permission to assign tasks' }
   }
 
-  const { error } = await supabase.from('tasks').insert({
-    ...input,
-    assigned_by: user.id,
-    status: 'pending',
-  })
+  const { data: task, error } = await supabase
+    .from('tasks')
+    .insert({ ...input, assigned_by: user.id, status: 'pending' })
+    .select('id')
+    .single()
 
   if (error) return { success: false, error: error.message }
+
+  // Notify assignee if different from assigner
+  if (input.assigned_to !== user.id) {
+    await createNotification({
+      user_id: input.assigned_to,
+      title: 'New task assigned',
+      body: `${user.name} assigned you: "${input.title}"`,
+      type: 'task',
+      entity_type: 'task',
+      entity_id: task.id,
+    })
+  }
+
   revalidatePath('/tasks')
   return { success: true, data: undefined }
 }

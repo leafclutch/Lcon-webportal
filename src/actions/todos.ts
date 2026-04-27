@@ -9,7 +9,7 @@ export async function createTodo(input: {
   title: string
   description?: string
   user_id: string
-}): Promise<ActionResult<void>> {
+}): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
@@ -19,15 +19,15 @@ export async function createTodo(input: {
     return { success: false, error: 'Permission denied' }
   }
 
-  const { error } = await supabase.from('todos').insert({
+  const { data: todo, error } = await supabase.from('todos').insert({
     ...input,
     created_by: user.id,
     status: 'pending',
-  })
+  }).select('id').single()
 
   if (error) return { success: false, error: error.message }
   revalidatePath('/todos')
-  return { success: true, data: undefined }
+  return { success: true, data: { id: todo.id } }
 }
 
 export async function updateTodoStatus(

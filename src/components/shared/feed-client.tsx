@@ -3,9 +3,10 @@
 import { useState, useTransition } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { Avatar } from '@/components/ui/avatar'
+import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
 import { postDailyUpdate, postIdea, deleteUpdate, deleteIdea } from '@/actions/updates-ideas'
+import { saveAttachments } from '@/actions/attachments'
 import { formatRelative } from '@/lib/utils'
 import { Trash2, FileText, Lightbulb } from 'lucide-react'
 
@@ -20,18 +21,38 @@ interface FeedClientProps {
   type: 'update' | 'idea'
   placeholder: string
   emptyText: string
+  canUpload: boolean
 }
 
-export function FeedClient({ items, currentUserId, type, placeholder, emptyText }: FeedClientProps) {
+export function FeedClient({ items, currentUserId, type, placeholder, emptyText, canUpload }: FeedClientProps) {
   const [content, setContent] = useState('')
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [isPending, startTransition] = useTransition()
 
+  const canPost = (content.trim() || attachments.length > 0) && !attachments.some(a => a.uploading)
+
   const handlePost = () => {
-    if (!content.trim()) return
+    if (!canPost) return
     startTransition(async () => {
       const action = type === 'update' ? postDailyUpdate : postIdea
       const res = await action(content.trim())
-      if (res.success) setContent('')
+      if (res.success) {
+        if (attachments.length) {
+          await saveAttachments(
+            attachments.map(a => ({
+              entity_type: (type === 'update' ? 'daily_update' : 'idea') as 'daily_update' | 'idea',
+              entity_id: res.data.id,
+              type: a.type,
+              name: a.name,
+              url: a.url,
+              mime_type: a.mimeType,
+              size_bytes: a.sizeBytes,
+            }))
+          )
+        }
+        setContent('')
+        setAttachments([])
+      }
     })
   }
 
@@ -49,14 +70,27 @@ export function FeedClient({ items, currentUserId, type, placeholder, emptyText 
       {/* Post box */}
       <Card>
         <CardContent className="p-4">
-          <Textarea
-            placeholder={placeholder}
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            className="min-h-[80px] resize-none border-0 shadow-none focus:ring-0 p-0"
-          />
+          {canUpload ? (
+            <RichInput
+              value={content}
+              onChange={setContent}
+              attachments={attachments}
+              onAttachmentsChange={setAttachments}
+              placeholder={placeholder}
+              disabled={isPending}
+              rows={3}
+            />
+          ) : (
+            <textarea
+              placeholder={placeholder}
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+          )}
           <div className="mt-3 flex justify-end border-t border-gray-100 pt-3">
-            <Button onClick={handlePost} loading={isPending} disabled={!content.trim()} size="sm">
+            <Button onClick={handlePost} loading={isPending} disabled={!canPost} size="sm">
               Post {type === 'update' ? 'Update' : 'Idea'}
             </Button>
           </div>
