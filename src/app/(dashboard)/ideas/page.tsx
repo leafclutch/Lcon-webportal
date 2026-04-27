@@ -32,6 +32,7 @@ export default async function IdeasPage() {
         type="idea"
         placeholder="Share a new idea with the team..."
         emptyText="No ideas yet — share your first one!"
+        canUpload={user?.permissions.includes('upload_attachments') ?? false}
       />
     </DashboardShell>
   )

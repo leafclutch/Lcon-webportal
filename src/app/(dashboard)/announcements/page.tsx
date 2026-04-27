@@ -30,6 +30,7 @@ export default async function AnnouncementsPage() {
         announcements={announcements}
         canCreate={user?.permissions.includes('send_announcement') ?? false}
         currentUserId={user?.id ?? ''}
+        canUpload={user?.permissions.includes('upload_attachments') ?? false}
       />
     </DashboardShell>
   )
