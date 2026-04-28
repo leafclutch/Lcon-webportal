@@ -21,6 +21,7 @@ interface NavItem {
   icon: React.ElementType
   permission?: PermissionName
   always?: boolean
+  badge?: number
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -52,12 +53,40 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user, hasPermission } = useAuth()
   const router = useRouter()
   const [hasMounted, setHasMounted] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => { setHasMounted(true) }, [])
 
+  useEffect(() => {
+    if (!hasMounted || !hasPermission('approve_users')) return
+    const supabase = createClient()
+    let ignore = false
+
+    const fetch = async () => {
+      const { count } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_approved', false)
+      if (!ignore) setPendingCount(count ?? 0)
+    }
+
+    fetch()
+
+    const channel = supabase
+      .channel('pending-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetch)
+      .subscribe()
+
+    return () => { ignore = true; supabase.removeChannel(channel) }
+  }, [hasMounted, hasPermission])
+
   // Suppress admin items until after client hydration to avoid server/client mismatch
   const adminItems = hasMounted
-    ? ADMIN_NAV_ITEMS.filter(item => !item.permission || hasPermission(item.permission))
+    ? ADMIN_NAV_ITEMS.filter(item => !item.permission || hasPermission(item.permission)).map(item =>
+        item.href === '/admin/users' && pendingCount > 0
+          ? { ...item, badge: pendingCount }
+          : item
+      )
     : []
 
   const handleLogout = async () => {
@@ -168,7 +197,12 @@ function NavLink({
         )}
       >
         <item.icon size={16} />
-        {item.label}
+        <span className="flex-1">{item.label}</span>
+        {item.badge != null && item.badge > 0 && (
+          <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white leading-none">
+            {item.badge}
+          </span>
+        )}
       </Link>
     </li>
   )

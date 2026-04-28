@@ -24,6 +24,8 @@ export type PermissionName =
   | 'verify_attendance_external'
   | 'view_daily_updates'
   | 'issue_auto_warning'
+  // Added in migration 005
+  | 'create_group'
 
 export interface AuthUser {
   id: string

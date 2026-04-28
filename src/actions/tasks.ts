@@ -14,7 +14,7 @@ interface CreateTaskInput {
   priority: 'low' | 'medium' | 'high' | 'urgent'
 }
 
-export async function createTask(input: CreateTaskInput): Promise<ActionResult<void>> {
+export async function createTask(input: CreateTaskInput): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
@@ -30,7 +30,6 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult<v
 
   if (error) return { success: false, error: error.message }
 
-  // Notify assignee if different from assigner
   if (input.assigned_to !== user.id) {
     await createNotification({
       user_id: input.assigned_to,
@@ -43,7 +42,7 @@ export async function createTask(input: CreateTaskInput): Promise<ActionResult<v
   }
 
   revalidatePath('/tasks')
-  return { success: true, data: undefined }
+  return { success: true, data: { id: task.id } }
 }
 
 export async function updateTaskStatus(

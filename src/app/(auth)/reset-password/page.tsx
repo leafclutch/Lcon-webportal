@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { CheckCircle2, Loader2 } from 'lucide-react'
 
 const schema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -22,20 +23,41 @@ type FormData = z.infer<typeof schema>
 export default function ResetPasswordPage() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
-  const [ready, setReady] = useState(false)
+  const [done, setDone] = useState(false)
+  // 'waiting' → checking token | 'ready' → can submit | 'invalid' → bad/expired link
+  const [status, setStatus] = useState<'waiting' | 'ready' | 'invalid'>('waiting')
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
 
   useEffect(() => {
-    // Supabase embeds the recovery token in the URL hash; the client SDK
-    // exchanges it for a session automatically on load.
     const supabase = createClient()
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
-      else setError('Invalid or expired reset link. Please request a new one.')
+
+    // PASSWORD_RECOVERY fires when Supabase detects the recovery token in the URL hash
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setStatus('ready')
+      } else if (event === 'SIGNED_IN' && session) {
+        // handles page refresh after token already exchanged
+        setStatus('ready')
+      }
     })
+
+    // Fallback: session already active (e.g. admin changing own password)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setStatus('ready')
+    })
+
+    // If nothing happened after 4s, the link is invalid/expired
+    const timeout = setTimeout(() => {
+      setStatus(prev => prev === 'waiting' ? 'invalid' : prev)
+    }, 4000)
+
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(timeout)
+    }
   }, [])
 
   const onSubmit = async (data: FormData) => {
@@ -43,8 +65,35 @@ export default function ResetPasswordPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.updateUser({ password: data.password })
     if (error) { setError(error.message); return }
-    router.push('/dashboard')
-    router.refresh()
+    setDone(true)
+    setTimeout(() => router.push('/dashboard'), 2000)
+  }
+
+  if (done) {
+    return (
+      <Card className="w-full max-w-md shadow-xl">
+        <CardContent className="py-10 text-center">
+          <CheckCircle2 className="mx-auto mb-4 h-12 w-12 text-green-500" />
+          <h2 className="mb-2 text-xl font-semibold">Password updated!</h2>
+          <p className="text-sm text-gray-500">Redirecting you to the dashboard…</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (status === 'invalid') {
+    return (
+      <Card className="w-full max-w-md shadow-xl">
+        <CardContent className="py-10 text-center">
+          <p className="mb-4 text-sm text-red-600">
+            This reset link is invalid or has expired. Please request a new one.
+          </p>
+          <a href="/forgot-password" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+            Request new link →
+          </a>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -60,7 +109,12 @@ export default function ResetPasswordPage() {
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
         )}
-        {ready && (
+        {status === 'waiting' ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-400">
+            <Loader2 size={16} className="animate-spin" />
+            Verifying reset link…
+          </div>
+        ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <Input
               label="New Password"

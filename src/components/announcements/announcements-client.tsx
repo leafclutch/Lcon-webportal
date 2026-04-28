@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmModal } from '@/components/ui/confirm-modal'
 import { Avatar } from '@/components/ui/avatar'
 import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
 import { createAnnouncement, deleteAnnouncement } from '@/actions/announcements'
@@ -23,6 +24,7 @@ export function AnnouncementsClient({ announcements, canCreate, currentUserId, c
   announcements: Announcement[]; canCreate: boolean; currentUserId: string; canUpload: boolean
 }) {
   const [showModal, setShowModal] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
@@ -64,8 +66,9 @@ export function AnnouncementsClient({ announcements, canCreate, currentUserId, c
     })
   }
 
-  const handleDelete = (id: string) => {
-    startTransition(async () => { await deleteAnnouncement(id) })
+  const handleDelete = () => {
+    if (!confirmId) return
+    startTransition(async () => { await deleteAnnouncement(confirmId); setConfirmId(null) })
   }
 
   const canPost = !!title && !!content && !attachments.some(a => a.uploading)
@@ -107,7 +110,7 @@ export function AnnouncementsClient({ announcements, canCreate, currentUserId, c
                     </div>
                   </div>
                   {canCreate && (
-                    <button onClick={() => handleDelete(a.id)} disabled={isPending}
+                    <button onClick={() => setConfirmId(a.id)} disabled={isPending}
                       className="shrink-0 text-gray-300 hover:text-red-500 disabled:opacity-50">
                       <Trash2 size={16} />
                     </button>
@@ -118,6 +121,14 @@ export function AnnouncementsClient({ announcements, canCreate, currentUserId, c
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        open={!!confirmId}
+        onClose={() => setConfirmId(null)}
+        onConfirm={handleDelete}
+        message="Delete this announcement? This cannot be undone."
+        isPending={isPending}
+      />
 
       <Modal open={showModal} onClose={resetModal} title="New Announcement" className="max-w-lg">
         <div className="space-y-4">

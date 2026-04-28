@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmModal } from '@/components/ui/confirm-modal'
 import { Avatar } from '@/components/ui/avatar'
 import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
 import { createTodo, updateTodoStatus, deleteTodo } from '@/actions/todos'
@@ -23,6 +24,7 @@ export function TodosClient({ todos, currentUserId, canViewAll, canUpload }: {
   todos: Todo[]; currentUserId: string; canViewAll: boolean; canUpload: boolean
 }) {
   const [showModal, setShowModal] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
@@ -69,8 +71,9 @@ export function TodosClient({ todos, currentUserId, canViewAll, canUpload }: {
     startTransition(async () => { await updateTodoStatus(todo.id, next) })
   }
 
-  const handleDelete = (id: string) => {
-    startTransition(async () => { await deleteTodo(id) })
+  const handleDelete = () => {
+    if (!confirmId) return
+    startTransition(async () => { await deleteTodo(confirmId); setConfirmId(null) })
   }
 
   const pending = todos.filter(t => t.status !== 'completed')
@@ -93,7 +96,7 @@ export function TodosClient({ todos, currentUserId, canViewAll, canUpload }: {
             <div>
               <h3 className="mb-2 text-sm font-semibold text-gray-600">{pending.length} remaining</h3>
               <div className="space-y-2">
-                {pending.map(todo => <TodoItem key={todo.id} todo={todo} currentUserId={currentUserId} onToggle={handleToggle} onDelete={handleDelete} isPending={isPending} />)}
+                {pending.map(todo => <TodoItem key={todo.id} todo={todo} currentUserId={currentUserId} onToggle={handleToggle} onRequestDelete={setConfirmId} isPending={isPending} />)}
               </div>
             </div>
           )}
@@ -101,12 +104,20 @@ export function TodosClient({ todos, currentUserId, canViewAll, canUpload }: {
             <div>
               <h3 className="mb-2 text-sm font-semibold text-gray-400">{completed.length} completed</h3>
               <div className="space-y-2">
-                {completed.map(todo => <TodoItem key={todo.id} todo={todo} currentUserId={currentUserId} onToggle={handleToggle} onDelete={handleDelete} isPending={isPending} />)}
+                {completed.map(todo => <TodoItem key={todo.id} todo={todo} currentUserId={currentUserId} onToggle={handleToggle} onRequestDelete={setConfirmId} isPending={isPending} />)}
               </div>
             </div>
           )}
         </>
       )}
+
+      <ConfirmModal
+        open={!!confirmId}
+        onClose={() => setConfirmId(null)}
+        onConfirm={handleDelete}
+        message="Delete this todo? This cannot be undone."
+        isPending={isPending}
+      />
 
       <Modal open={showModal} onClose={resetModal} title="New Todo">
         <div className="space-y-4">
@@ -138,9 +149,9 @@ export function TodosClient({ todos, currentUserId, canViewAll, canUpload }: {
   )
 }
 
-function TodoItem({ todo, currentUserId, onToggle, onDelete, isPending }: {
+function TodoItem({ todo, currentUserId, onToggle, onRequestDelete, isPending }: {
   todo: Todo; currentUserId: string;
-  onToggle: (t: Todo) => void; onDelete: (id: string) => void; isPending: boolean
+  onToggle: (t: Todo) => void; onRequestDelete: (id: string) => void; isPending: boolean
 }) {
   return (
     <Card>
@@ -167,7 +178,7 @@ function TodoItem({ todo, currentUserId, onToggle, onDelete, isPending }: {
           </a>
         )}
         {(todo.user_id === currentUserId) && (
-          <button onClick={() => onDelete(todo.id)} className="shrink-0 text-gray-300 hover:text-red-500">
+          <button onClick={() => onRequestDelete(todo.id)} className="shrink-0 text-gray-300 hover:text-red-500">
             <Trash2 size={14} />
           </button>
         )}

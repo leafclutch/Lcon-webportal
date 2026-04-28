@@ -32,6 +32,7 @@ export default async function AdminUsersPage() {
 
   const canApprove = user.permissions.includes('approve_users')
   const canDelete = user.permissions.includes('delete_user')
+  const canResetPassword = user.permissions.includes('manage_users')
 
   return (
     <DashboardShell title="User Management">
@@ -40,6 +41,7 @@ export default async function AdminUsersPage() {
         roles={roles ?? []}
         canApprove={canApprove}
         canDelete={canDelete}
+        canResetPassword={canResetPassword}
         currentUserId={user.id}
       />
     </DashboardShell>

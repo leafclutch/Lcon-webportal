@@ -218,17 +218,41 @@ export interface Database {
       attachments: {
         Row: {
           id: string; uploaded_by: string;
-          entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea';
+          entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea' | 'group_message';
           entity_id: string; type: 'file' | 'voice' | 'link' | 'image';
           name: string | null; url: string; size_bytes: number | null;
           mime_type: string | null; created_at: string
         }
         Insert: {
           uploaded_by: string;
-          entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea';
+          entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea' | 'group_message';
           entity_id: string; type: 'file' | 'voice' | 'link' | 'image';
           name?: string | null; url: string; size_bytes?: number | null; mime_type?: string | null
         }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      groups: {
+        Row: { id: string; name: string; description: string | null; created_by: string; created_at: string; updated_at: string }
+        Insert: { name: string; description?: string | null; created_by: string }
+        Update: { name?: string; description?: string | null }
+        Relationships: []
+      }
+      group_members: {
+        Row: { group_id: string; user_id: string; added_by: string | null; joined_at: string }
+        Insert: { group_id: string; user_id: string; added_by?: string | null }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      group_messages: {
+        Row: { id: string; group_id: string; sender_id: string; content: string | null; voice_url: string | null; created_at: string }
+        Insert: { group_id: string; sender_id: string; content?: string | null; voice_url?: string | null }
+        Update: Record<string, never>
+        Relationships: []
+      }
+      group_message_reads: {
+        Row: { message_id: string; user_id: string; read_at: string }
+        Insert: { message_id: string; user_id: string }
         Update: Record<string, never>
         Relationships: []
       }
@@ -264,6 +288,10 @@ export type DailyUpdate = Database['public']['Tables']['daily_updates']['Row']
 export type Idea = Database['public']['Tables']['ideas']['Row']
 export type Notification = Database['public']['Tables']['notifications']['Row']
 export type Attachment = Database['public']['Tables']['attachments']['Row']
+export type Group = Database['public']['Tables']['groups']['Row']
+export type GroupMember = Database['public']['Tables']['group_members']['Row']
+export type GroupMessage = Database['public']['Tables']['group_messages']['Row']
+export type GroupMessageRead = Database['public']['Tables']['group_message_reads']['Row']
 
 // Extended types with joins
 export type UserWithRole = User & { roles: Role | null }

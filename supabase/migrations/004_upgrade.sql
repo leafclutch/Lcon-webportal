@@ -92,6 +92,11 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created
 
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "notifications_select_own" ON notifications;
+DROP POLICY IF EXISTS "notifications_insert"      ON notifications;
+DROP POLICY IF EXISTS "notifications_update_own"  ON notifications;
+DROP POLICY IF EXISTS "notifications_delete_own"  ON notifications;
+
 CREATE POLICY "notifications_select_own" ON notifications
   FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "notifications_insert" ON notifications
@@ -125,6 +130,10 @@ CREATE INDEX IF NOT EXISTS idx_attachments_uploaded_by ON attachments(uploaded_b
 
 ALTER TABLE attachments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "attachments_select" ON attachments;
+DROP POLICY IF EXISTS "attachments_insert" ON attachments;
+DROP POLICY IF EXISTS "attachments_delete" ON attachments;
+
 CREATE POLICY "attachments_select" ON attachments
   FOR SELECT USING (auth.uid() IS NOT NULL);
 CREATE POLICY "attachments_insert" ON attachments
@@ -140,14 +149,15 @@ CREATE POLICY "attachments_delete" ON attachments
 
 -- ============================================================
 -- UPDATE handle_new_user: new signups start as unapproved
+-- Preserves 003 fixes: ON CONFLICT safeguard + SET search_path
 -- ============================================================
 
-CREATE OR REPLACE FUNCTION handle_new_user()
+CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   default_role_id UUID;
 BEGIN
-  SELECT id INTO default_role_id FROM roles WHERE name = 'member' LIMIT 1;
+  SELECT id INTO default_role_id FROM public.roles WHERE name = 'member' LIMIT 1;
   INSERT INTO public.users (id, name, email, role_id, is_approved)
   VALUES (
     NEW.id,
@@ -155,10 +165,14 @@ BEGIN
     NEW.email,
     default_role_id,
     false
-  );
+  )
+  ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 EXCEPTION
   WHEN others THEN
+    RAISE WARNING 'handle_new_user failed for %: %', NEW.email, SQLERRM;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+ALTER FUNCTION public.handle_new_user() OWNER TO postgres;

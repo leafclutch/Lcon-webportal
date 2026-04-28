@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser } from '@/lib/auth/permissions'
 import { revalidatePath } from 'next/cache'
 import type { ActionResult } from '@/types'
@@ -57,18 +58,30 @@ export async function rejectUser(userId: string): Promise<ActionResult<void>> {
 export async function deleteUser(userId: string): Promise<ActionResult<void>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
-  if (!user?.permissions.includes('delete_user')) {
-    return { success: false, error: 'Permission denied' }
-  }
-  if (userId === user.id) {
+  if (userId === user?.id) {
     return { success: false, error: 'Cannot delete your own account' }
   }
 
-  // Deleting from public.users cascades to all related data.
-  // The auth.users entry is orphaned — user cannot access the system
-  // because getCurrentUser returns null without a public.users profile.
-  const { error } = await supabase.from('users').delete().eq('id', userId)
-  if (error) return { success: false, error: error.message }
+  // Check if the target is a pending (unapproved) user
+  const { data: target } = await supabase
+    .from('users')
+    .select('is_approved')
+    .eq('id', userId)
+    .single()
+
+  const canDeleteApproved = user?.permissions.includes('delete_user')
+  const canDeletePending = user?.permissions.includes('approve_users') || user?.permissions.includes('delete_user')
+
+  if (target?.is_approved && !canDeleteApproved) {
+    return { success: false, error: 'Permission denied' }
+  }
+  if (!target?.is_approved && !canDeletePending) {
+    return { success: false, error: 'Permission denied' }
+  }
+
+  // Also remove from auth.users so they can't sign in again
+  const adminClient = createAdminClient()
+  await adminClient.auth.admin.deleteUser(userId)
 
   revalidatePath('/admin/users')
   return { success: true, data: undefined }
@@ -126,6 +139,22 @@ export async function deleteRole(roleId: string): Promise<ActionResult<void>> {
   if (error) return { success: false, error: error.message }
 
   revalidatePath('/admin/roles')
+  return { success: true, data: undefined }
+}
+
+export async function resetUserPassword(userId: string, newPassword: string): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.permissions.includes('manage_users')) {
+    return { success: false, error: 'Permission denied' }
+  }
+  if (newPassword.length < 8) {
+    return { success: false, error: 'Password must be at least 8 characters' }
+  }
+
+  const adminClient = createAdminClient()
+  const { error } = await adminClient.auth.admin.updateUserById(userId, { password: newPassword })
+  if (error) return { success: false, error: error.message }
+
   return { success: true, data: undefined }
 }
 

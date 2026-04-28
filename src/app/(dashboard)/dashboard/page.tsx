@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/permissions'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
@@ -7,18 +8,21 @@ import { Avatar } from '@/components/ui/avatar'
 import { formatDate, formatRelative, statusColor, priorityColor } from '@/lib/utils'
 import {
   Users, CheckSquare, CalendarOff, AlertTriangle,
-  Clock, FolderOpen, FileText,
+  Clock, FolderOpen, FileText, UserCheck,
 } from 'lucide-react'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const currentUser = await getCurrentUser()
 
+  const canApprovUsers = currentUser?.permissions.includes('approve_users') ?? false
+
   const [
     { count: userCount },
     { count: taskCount },
     { count: leaveCount },
     { count: warningCount },
+    { count: pendingApprovalCount },
     { data: rawAnnouncements },
     { data: rawTasks },
     { data: rawUpdates },
@@ -28,6 +32,9 @@ export default async function DashboardPage() {
     supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('warnings').select('*', { count: 'exact', head: true }),
+    canApprovUsers
+      ? supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_approved', false)
+      : Promise.resolve({ count: 0 }),
     supabase.from('announcements').select('id, title, content, created_at, created_by').order('created_at', { ascending: false }).limit(3),
     supabase.from('tasks').select('id, title, priority, status, deadline, assigned_to').eq('assigned_to', currentUser?.id ?? '').order('created_at', { ascending: false }).limit(5),
     supabase.from('daily_updates').select('id, user_id, content, created_at').order('created_at', { ascending: false }).limit(4),
@@ -72,6 +79,27 @@ export default async function DashboardPage() {
             {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
+
+        {/* Pending approvals banner — visible to admins only */}
+        {canApprovUsers && (pendingApprovalCount ?? 0) > 0 && (
+          <Link
+            href="/admin/users"
+            className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100">
+                <UserCheck size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">
+                  {pendingApprovalCount} pending account {pendingApprovalCount === 1 ? 'approval' : 'approvals'}
+                </p>
+                <p className="text-xs text-amber-600">Click to review and approve new users</p>
+              </div>
+            </div>
+            <span className="text-xs font-medium text-amber-700 underline">Review →</span>
+          </Link>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

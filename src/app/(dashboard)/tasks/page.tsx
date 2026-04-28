@@ -8,6 +8,7 @@ export default async function TasksPage() {
   const user = await getCurrentUser()
   const canAssign = user?.permissions.includes('assign_task') ?? false
   const viewAll = user?.permissions.includes('view_all_tasks') ?? false
+  const canUpload = user?.permissions.includes('upload_attachments') ?? false
 
   let taskQuery = supabase
     .from('tasks')
@@ -23,11 +24,28 @@ export default async function TasksPage() {
     supabase.from('users').select('id, name, avatar_url').order('name'),
   ])
 
+  const taskIds = (rawTasks ?? []).map(t => t.id)
+  const { data: rawAttachments } = taskIds.length
+    ? await supabase
+        .from('attachments')
+        .select('id, entity_id, type, name, url, mime_type, size_bytes')
+        .eq('entity_type', 'task')
+        .in('entity_id', taskIds)
+    : { data: [] }
+
+  type TaskAttachRow = { id: string; entity_id: string; type: string; name: string | null; url: string; mime_type: string | null; size_bytes: number | null }
+  const attachmentsByTaskId: Record<string, TaskAttachRow[]> = {}
+  for (const a of (rawAttachments ?? []) as TaskAttachRow[]) {
+    if (!attachmentsByTaskId[a.entity_id]) attachmentsByTaskId[a.entity_id] = []
+    attachmentsByTaskId[a.entity_id]!.push(a)
+  }
+
   const userMap = Object.fromEntries((users ?? []).map(u => [u.id, u]))
   const tasks = (rawTasks ?? []).map(t => ({
     ...t,
     assigner: userMap[t.assigned_by] ?? { id: t.assigned_by, name: 'Unknown', avatar_url: null },
     assignee: userMap[t.assigned_to] ?? { id: t.assigned_to, name: 'Unknown', avatar_url: null },
+    attachments: attachmentsByTaskId[t.id] ?? [],
   }))
 
   return (
@@ -36,6 +54,7 @@ export default async function TasksPage() {
         tasks={tasks}
         users={canAssign ? (users ?? []) : []}
         canAssign={canAssign}
+        canUpload={canUpload}
         currentUserId={user?.id ?? ''}
       />
     </DashboardShell>

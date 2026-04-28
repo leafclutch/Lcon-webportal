@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmModal } from '@/components/ui/confirm-modal'
 import { createRole, updateRolePermissions, deleteRole } from '@/actions/admin'
 import { Plus, Trash2, Shield, ChevronDown, ChevronUp } from 'lucide-react'
 
@@ -20,6 +21,7 @@ export function RolesClient({ roles, permissions, rolePermissions }: {
   const [expandedRole, setExpandedRole] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', description: '' })
   const [error, setError] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const rolePermMap: Record<string, Set<string>> = {}
@@ -37,9 +39,9 @@ export function RolesClient({ roles, permissions, rolePermissions }: {
     })
   }
 
-  const handleDelete = (roleId: string) => {
-    if (!confirm('Delete this role? Users with this role will lose it.')) return
-    startTransition(async () => { await deleteRole(roleId) })
+  const handleDelete = () => {
+    if (!confirmId) return
+    startTransition(async () => { await deleteRole(confirmId); setConfirmId(null) })
   }
 
   const handlePermissionToggle = (roleId: string, permId: string, currentPerms: Set<string>) => {
@@ -85,7 +87,7 @@ export function RolesClient({ roles, permissions, rolePermissions }: {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => handleDelete(role.id)}
+                      onClick={() => setConfirmId(role.id)}
                       className="rounded p-1 text-gray-400 hover:text-red-500"
                     >
                       <Trash2 size={15} />
@@ -129,6 +131,14 @@ export function RolesClient({ roles, permissions, rolePermissions }: {
           )
         })}
       </div>
+
+      <ConfirmModal
+        open={!!confirmId}
+        onClose={() => setConfirmId(null)}
+        onConfirm={handleDelete}
+        message="Delete this role? Users assigned to it will lose their permissions."
+        isPending={isPending}
+      />
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Create Role">
         <div className="space-y-4">

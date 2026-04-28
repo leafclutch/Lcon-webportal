@@ -8,6 +8,7 @@ import { RichInput, type PendingAttachment } from '@/components/shared/rich-inpu
 import { postDailyUpdate, postIdea, deleteUpdate, deleteIdea } from '@/actions/updates-ideas'
 import { saveAttachments } from '@/actions/attachments'
 import { formatRelative } from '@/lib/utils'
+import { ConfirmModal } from '@/components/ui/confirm-modal'
 import { Trash2, FileText, Lightbulb } from 'lucide-react'
 
 interface FeedItem {
@@ -27,6 +28,7 @@ interface FeedClientProps {
 export function FeedClient({ items, currentUserId, type, placeholder, emptyText, canUpload }: FeedClientProps) {
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [confirmId, setConfirmId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const canPost = (content.trim() || attachments.length > 0) && !attachments.some(a => a.uploading)
@@ -56,10 +58,12 @@ export function FeedClient({ items, currentUserId, type, placeholder, emptyText,
     })
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = () => {
+    if (!confirmId) return
     startTransition(async () => {
       const action = type === 'update' ? deleteUpdate : deleteIdea
-      await action(id)
+      await action(confirmId)
+      setConfirmId(null)
     })
   }
 
@@ -120,7 +124,7 @@ export function FeedClient({ items, currentUserId, type, placeholder, emptyText,
                     <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{item.content}</p>
                   </div>
                   {item.users?.id === currentUserId && (
-                    <button onClick={() => handleDelete(item.id)} disabled={isPending}
+                    <button onClick={() => setConfirmId(item.id)} disabled={isPending}
                       className="shrink-0 text-gray-300 hover:text-red-500 disabled:opacity-50">
                       <Trash2 size={14} />
                     </button>
@@ -131,6 +135,14 @@ export function FeedClient({ items, currentUserId, type, placeholder, emptyText,
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        open={!!confirmId}
+        onClose={() => setConfirmId(null)}
+        onConfirm={handleDelete}
+        message={`Delete this ${type === 'update' ? 'update' : 'idea'}? This cannot be undone.`}
+        isPending={isPending}
+      />
     </div>
   )
 }

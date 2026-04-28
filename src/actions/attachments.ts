@@ -5,7 +5,7 @@ import { getCurrentUser } from '@/lib/auth/permissions'
 import type { ActionResult } from '@/types'
 
 export interface AttachmentRecord {
-  entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea'
+  entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea' | 'group_message'
   entity_id: string
   type: 'file' | 'voice' | 'link' | 'image'
   name: string

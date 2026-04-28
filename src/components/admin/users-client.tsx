@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { assignRole, approveUser, rejectUser, deleteUser } from '@/actions/admin'
+import { assignRole, approveUser, rejectUser, deleteUser, resetUserPassword } from '@/actions/admin'
 import { formatDate } from '@/lib/utils'
-import { CheckCircle2, XCircle, Trash2, Clock } from 'lucide-react'
+import { CheckCircle2, XCircle, Trash2, Clock, KeyRound, X } from 'lucide-react'
 
 interface Role { id: string; name: string }
 interface User {
@@ -22,6 +22,7 @@ interface UsersClientProps {
   roles: Role[]
   canApprove: boolean
   canDelete: boolean
+  canResetPassword: boolean
   currentUserId: string
 }
 
@@ -36,11 +37,16 @@ function activityLabel(lastActive: string | null): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-export function UsersClient({ users, roles, canApprove, canDelete, currentUserId }: UsersClientProps) {
+export function UsersClient({ users, roles, canApprove, canDelete, canResetPassword, currentUserId }: UsersClientProps) {
   const [isPending, startTransition] = useTransition()
   const [search, setSearch] = useState('')
   const [approvalFilter, setApprovalFilter] = useState<'all' | 'pending' | 'approved'>('all')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [resetTarget, setResetTarget] = useState<User | null>(null)
+  const [resetPw, setResetPw] = useState('')
+  const [resetPwConfirm, setResetPwConfirm] = useState('')
+  const [resetError, setResetError] = useState<string | null>(null)
+  const [resetDone, setResetDone] = useState(false)
 
   const filtered = users.filter(u => {
     const matchesSearch =
@@ -154,6 +160,15 @@ export function UsersClient({ users, roles, canApprove, canDelete, currentUserId
                       <td className="px-4 py-3 text-gray-500">{formatDate(u.created_at)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
+                          {canResetPassword && (
+                            <button
+                              onClick={() => { setResetTarget(u); setResetPw(''); setResetPwConfirm(''); setResetError(null); setResetDone(false) }}
+                              className="rounded p-1 text-gray-400 hover:text-indigo-600 transition-colors"
+                              title="Reset password"
+                            >
+                              <KeyRound size={15} />
+                            </button>
+                          )}
                           {canApprove && !u.is_approved && (
                             <button
                               onClick={() => handle(() => approveUser(u.id))}
@@ -174,7 +189,7 @@ export function UsersClient({ users, roles, canApprove, canDelete, currentUserId
                               <XCircle size={16} />
                             </button>
                           )}
-                          {canDelete && u.id !== currentUserId && (
+                          {(canDelete || (canApprove && !u.is_approved)) && u.id !== currentUserId && (
                             confirmDelete === u.id ? (
                               <div className="flex items-center gap-1">
                                 <button
@@ -211,6 +226,85 @@ export function UsersClient({ users, roles, canApprove, canDelete, currentUserId
           </div>
         </CardContent>
       </Card>
+
+      {/* Reset Password Modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Reset Password</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{resetTarget.name} · {resetTarget.email}</p>
+              </div>
+              <button onClick={() => setResetTarget(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            {resetDone ? (
+              <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 text-center">
+                Password updated successfully!
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {resetError && (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{resetError}</div>
+                )}
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-700">New Password</label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={resetPw}
+                      onChange={e => setResetPw(e.target.value)}
+                      placeholder="Min. 8 characters"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-700">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={resetPwConfirm}
+                    onChange={e => setResetPwConfirm(e.target.value)}
+                    placeholder="Repeat password"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => setResetTarget(null)}
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={isPending}
+                    onClick={() => {
+                      if (resetPw.length < 8) { setResetError('Password must be at least 8 characters'); return }
+                      if (resetPw !== resetPwConfirm) { setResetError('Passwords do not match'); return }
+                      setResetError(null)
+                      startTransition(async () => {
+                        const result = await resetUserPassword(resetTarget.id, resetPw)
+                        if (result.success) {
+                          setResetDone(true)
+                          setTimeout(() => setResetTarget(null), 1500)
+                        } else {
+                          setResetError(result.error ?? 'Failed to reset password')
+                        }
+                      })
+                    }}
+                    className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {isPending ? 'Saving…' : 'Save Password'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
