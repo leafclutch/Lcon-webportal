@@ -9,6 +9,7 @@ export default async function TasksPage() {
   const canAssign = user?.permissions.includes('assign_task') ?? false
   const viewAll = user?.permissions.includes('view_all_tasks') ?? false
   const canUpload = user?.permissions.includes('upload_attachments') ?? false
+  const canComment = user?.permissions.includes('comment_on_tasks') ?? false
 
   let taskQuery = supabase
     .from('tasks')
@@ -55,7 +56,10 @@ export default async function TasksPage() {
         users={canAssign ? (users ?? []) : []}
         canAssign={canAssign}
         canUpload={canUpload}
+        canComment={canComment}
         currentUserId={user?.id ?? ''}
+        currentUserName={user?.name ?? ''}
+        currentUserAvatar={user?.avatar_url ?? null}
       />
     </DashboardShell>
   )

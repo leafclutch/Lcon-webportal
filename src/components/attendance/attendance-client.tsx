@@ -12,10 +12,18 @@ import {
   markAttendance,
   getAllAttendanceLogs,
   exportAttendanceCsv,
+  clockIn,
+  clockOut,
+  startBreak,
+  endBreak,
 } from '@/actions/attendance'
 import { statusColor } from '@/lib/utils'
-import { Clock, QrCode, CheckCircle2, XCircle, Copy, Download, Users, User as UserIcon } from 'lucide-react'
-import type { AttendanceCode, AttendanceLog } from '@/types'
+import {
+  Clock, QrCode, CheckCircle2, XCircle, Copy, Download,
+  Users, User as UserIcon, Wifi, LogIn, LogOut as LogOutIcon,
+  Coffee, Play, Timer,
+} from 'lucide-react'
+import type { AttendanceCode, AttendanceLog, AttendanceBreak } from '@/types'
 import type { AllLog } from '@/actions/attendance'
 
 interface UserInfo { id: string; name: string; email: string; avatar_url: string | null }
@@ -28,6 +36,9 @@ interface AttendanceClientProps {
   canGenerateCode: boolean
   canViewAll: boolean
   canExport: boolean
+  canRemote: boolean
+  todayBreaks: AttendanceBreak[]
+  activeBreaks: { user_id: string }[]
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -38,6 +49,19 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'half_day', label: 'Half Day' },
 ]
 
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function breakDurationMins(b: AttendanceBreak) {
+  const end = b.end_time ? new Date(b.end_time) : new Date()
+  return Math.round((end.getTime() - new Date(b.start_time).getTime()) / 60000)
+}
+
+function totalBreakMins(breaks: AttendanceBreak[]) {
+  return breaks.reduce((sum, b) => sum + breakDurationMins(b), 0)
+}
+
 export function AttendanceClient({
   logs,
   activeCodes,
@@ -46,6 +70,9 @@ export function AttendanceClient({
   canGenerateCode,
   canViewAll,
   canExport,
+  canRemote,
+  todayBreaks,
+  activeBreaks,
 }: AttendanceClientProps) {
   const [tab, setTab] = useState<'my' | 'all'>('my')
   const [code, setCode] = useState('')
@@ -54,13 +81,26 @@ export function AttendanceClient({
   const [copied, setCopied] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  // All-users filters
   const [filterUser, setFilterUser] = useState('')
   const [filterStart, setFilterStart] = useState('')
   const [filterEnd, setFilterEnd] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [allLogs, setAllLogs] = useState<AllLog[]>(initialAllLogs)
   const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]))
+
+  const today = new Date().toISOString().slice(0, 10)
+  const todayLog = logs.find(l => l.date === today)
+  const openBreak = todayBreaks.find(b => b.end_time === null)
+
+  type WorkState = 'not_started' | 'working' | 'on_break' | 'done'
+  const workState: WorkState = (() => {
+    if (!todayLog?.tap_in_time) return 'not_started'
+    if (todayLog.tap_out_time) return 'done'
+    if (openBreak) return 'on_break'
+    return 'working'
+  })()
+
+  const activeBreakSet = new Set(activeBreaks.map(b => b.user_id))
 
   const handleMarkAttendance = () => {
     if (!code.trim()) return
@@ -97,6 +137,34 @@ export function AttendanceClient({
     })
   }
 
+  const handleClockIn = () => {
+    startTransition(async () => {
+      const res = await clockIn()
+      setResult({ ok: res.success, message: res.success ? 'Clocked in remotely!' : res.error })
+    })
+  }
+
+  const handleClockOut = () => {
+    startTransition(async () => {
+      const res = await clockOut()
+      setResult({ ok: res.success, message: res.success ? 'Clocked out!' : res.error })
+    })
+  }
+
+  const handleStartBreak = () => {
+    startTransition(async () => {
+      const res = await startBreak()
+      setResult({ ok: res.success, message: res.success ? 'Break started.' : res.error })
+    })
+  }
+
+  const handleEndBreak = () => {
+    startTransition(async () => {
+      const res = await endBreak()
+      setResult({ ok: res.success, message: res.success ? 'Back to work!' : res.error })
+    })
+  }
+
   const handleExport = () => {
     startTransition(async () => {
       const res = await exportAttendanceCsv({
@@ -116,17 +184,20 @@ export function AttendanceClient({
     })
   }
 
-  const today = new Date().toISOString().slice(0, 10)
-  const todayLog = logs.find(l => l.date === today)
-
   const userOptions = [
     { value: '', label: 'All Users' },
     ...allUsers.map(u => ({ value: u.id, label: u.name })),
   ]
 
+  const stateConfig = {
+    not_started: { label: 'Not Clocked In', dot: 'bg-gray-300', text: 'text-gray-500' },
+    working: { label: 'Working', dot: 'bg-green-400 animate-pulse', text: 'text-green-600' },
+    on_break: { label: 'On Break', dot: 'bg-amber-400 animate-pulse', text: 'text-amber-600' },
+    done: { label: 'Done for the Day', dot: 'bg-blue-400', text: 'text-blue-600' },
+  }[workState]
+
   return (
     <div className="space-y-6">
-      {/* Tab bar (only shown when canViewAll) */}
       {canViewAll && (
         <div className="flex gap-1 rounded-xl bg-gray-100 p-1 w-fit">
           <button
@@ -146,9 +217,101 @@ export function AttendanceClient({
         </div>
       )}
 
-      {/* My Attendance Tab */}
       {tab === 'my' && (
         <>
+          {/* Today's Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Timer size={16} className="text-indigo-500" />
+                Today's Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Status pill */}
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${stateConfig.dot}`} />
+                <span className={`text-sm font-semibold ${stateConfig.text}`}>{stateConfig.label}</span>
+              </div>
+
+              {/* Times row */}
+              {todayLog && (
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-400 text-xs uppercase tracking-wide">Clock In</span>
+                    <p className="font-medium">{todayLog.tap_in_time ? formatTime(todayLog.tap_in_time) : '—'}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-xs uppercase tracking-wide">Clock Out</span>
+                    <p className="font-medium">{todayLog.tap_out_time ? formatTime(todayLog.tap_out_time) : '—'}</p>
+                  </div>
+                  {todayBreaks.length > 0 && (
+                    <div>
+                      <span className="text-gray-400 text-xs uppercase tracking-wide">Break Time</span>
+                      <p className="font-medium">{totalBreakMins(todayBreaks)} min</p>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-gray-400 text-xs uppercase tracking-wide">Type</span>
+                    <p className="font-medium capitalize">{todayLog.type ?? 'onsite'}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Break buttons */}
+              {(workState === 'working' || workState === 'on_break') && (
+                <div className="flex gap-2">
+                  {workState === 'working' && (
+                    <Button
+                      onClick={handleStartBreak}
+                      loading={isPending}
+                      variant="outline"
+                      className="gap-2"
+                    >
+                      <Coffee size={14} />
+                      Start Break
+                    </Button>
+                  )}
+                  {workState === 'on_break' && (
+                    <Button
+                      onClick={handleEndBreak}
+                      loading={isPending}
+                      variant="outline"
+                      className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+                    >
+                      <Play size={14} />
+                      Clock Back In
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Break timeline */}
+              {todayBreaks.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Breaks Today</p>
+                  {todayBreaks.map((b, i) => (
+                    <div key={b.id} className="flex items-center gap-2 text-sm text-gray-600">
+                      <Coffee size={12} className="text-amber-400 shrink-0" />
+                      <span>Break {i + 1}:</span>
+                      <span>{formatTime(b.start_time)}</span>
+                      <span className="text-gray-300">→</span>
+                      <span>{b.end_time ? formatTime(b.end_time) : <span className="text-amber-500 font-medium">Ongoing</span>}</span>
+                      <span className="text-gray-400 text-xs">({breakDurationMins(b)} min)</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result && (
+                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${result.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                  {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                  {result.message}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Mark attendance */}
             <Card>
@@ -159,28 +322,6 @@ export function AttendanceClient({
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {todayLog && (
-                  <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Status</span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(todayLog.status)}`}>
-                        {todayLog.status}
-                      </span>
-                    </div>
-                    {todayLog.tap_in_time && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Tap In</span>
-                        <span>{new Date(todayLog.tap_in_time).toLocaleTimeString()}</span>
-                      </div>
-                    )}
-                    {todayLog.tap_out_time && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Tap Out</span>
-                        <span>{new Date(todayLog.tap_out_time).toLocaleTimeString()}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
                 <Input
                   label="Enter Code"
                   placeholder="Enter attendance code..."
@@ -188,12 +329,6 @@ export function AttendanceClient({
                   onChange={e => setCode(e.target.value.toUpperCase())}
                   className="font-mono text-lg tracking-widest"
                 />
-                {result && (
-                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${result.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                    {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-                    {result.message}
-                  </div>
-                )}
                 <Button onClick={handleMarkAttendance} loading={isPending} className="w-full" disabled={!code}>
                   Submit Code
                 </Button>
@@ -249,6 +384,46 @@ export function AttendanceClient({
             )}
           </div>
 
+          {/* Remote attendance */}
+          {canRemote && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Wifi size={16} className="text-indigo-500" />
+                  Remote Attendance
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-gray-500">Clock in or out remotely — no code required.</p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleClockIn}
+                    loading={isPending}
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    disabled={!!todayLog?.tap_in_time}
+                  >
+                    <LogIn size={14} />
+                    Clock In
+                  </Button>
+                  <Button
+                    onClick={handleClockOut}
+                    loading={isPending}
+                    variant="secondary"
+                    className="flex-1 gap-2"
+                    disabled={!todayLog?.tap_in_time || !!todayLog?.tap_out_time || workState === 'on_break'}
+                  >
+                    <LogOutIcon size={14} />
+                    Clock Out
+                  </Button>
+                </div>
+                {workState === 'on_break' && (
+                  <p className="text-xs text-amber-600">End your break before clocking out.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* My history */}
           <Card>
             <CardHeader>
@@ -261,10 +436,8 @@ export function AttendanceClient({
         </>
       )}
 
-      {/* All Users Tab */}
       {tab === 'all' && canViewAll && (
         <div className="space-y-4">
-          {/* Filters */}
           <Card>
             <CardContent className="p-4">
               <div className="flex flex-wrap gap-3">
@@ -311,7 +484,6 @@ export function AttendanceClient({
             </CardContent>
           </Card>
 
-          {/* All-user table */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
@@ -326,38 +498,55 @@ export function AttendanceClient({
                     <tr className="border-b border-gray-100">
                       <th className="pb-2 text-left font-medium text-gray-500">User</th>
                       <th className="pb-2 text-left font-medium text-gray-500">Date</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Tap In</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Tap Out</th>
+                      <th className="pb-2 text-left font-medium text-gray-500">Clock In</th>
+                      <th className="pb-2 text-left font-medium text-gray-500">Clock Out</th>
+                      <th className="pb-2 text-left font-medium text-gray-500">Type</th>
                       <th className="pb-2 text-left font-medium text-gray-500">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {allLogs.length === 0 ? (
-                      <tr><td colSpan={5} className="py-6 text-center text-gray-400">No records found</td></tr>
+                      <tr><td colSpan={6} className="py-6 text-center text-gray-400">No records found</td></tr>
                     ) : (
                       allLogs.map(log => {
                         const u = userMap[log.user_id]
+                        const isOnBreak = activeBreakSet.has(log.user_id) && log.date === today
                         return (
-                        <tr key={log.id}>
-                          <td className="py-2">
-                            <div className="flex items-center gap-2">
-                              <Avatar name={u?.name ?? '?'} src={u?.avatar_url ?? null} size="sm" />
-                              <span className="font-medium text-gray-800">{u?.name ?? '—'}</span>
-                            </div>
-                          </td>
-                          <td className="py-2 text-gray-600">{log.date}</td>
-                          <td className="py-2 text-gray-600">
-                            {log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}
-                          </td>
-                          <td className="py-2 text-gray-600">
-                            {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
-                          </td>
-                          <td className="py-2">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>
-                              {log.status}
-                            </span>
-                          </td>
-                        </tr>
+                          <tr key={log.id}>
+                            <td className="py-2">
+                              <div className="flex items-center gap-2">
+                                <Avatar name={u?.name ?? '?'} src={u?.avatar_url ?? null} size="sm" />
+                                <div>
+                                  <span className="font-medium text-gray-800">{u?.name ?? '—'}</span>
+                                  {isOnBreak && (
+                                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600 font-medium">
+                                      <Coffee size={10} />
+                                      On Break
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2 text-gray-600">{log.date}</td>
+                            <td className="py-2 text-gray-600">
+                              {log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}
+                            </td>
+                            <td className="py-2 text-gray-600">
+                              {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
+                            </td>
+                            <td className="py-2">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${log.type === 'remote' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-600 bg-gray-100'}`}>
+                                {log.type === 'remote' ? (
+                                  <span className="flex items-center gap-1"><Wifi size={10} />Remote</span>
+                                ) : 'Onsite'}
+                              </span>
+                            </td>
+                            <td className="py-2">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>
+                                {log.status}
+                              </span>
+                            </td>
+                          </tr>
                         )
                       })
                     )}
@@ -379,8 +568,8 @@ function AttendanceTable({ logs }: { logs: AttendanceLog[] }) {
         <thead>
           <tr className="border-b border-gray-100">
             <th className="pb-2 text-left font-medium text-gray-500">Date</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Tap In</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Tap Out</th>
+            <th className="pb-2 text-left font-medium text-gray-500">Clock In</th>
+            <th className="pb-2 text-left font-medium text-gray-500">Clock Out</th>
             <th className="pb-2 text-left font-medium text-gray-500">Status</th>
           </tr>
         </thead>

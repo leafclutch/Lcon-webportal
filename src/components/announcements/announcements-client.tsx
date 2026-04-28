@@ -12,6 +12,7 @@ import { RichInput, type PendingAttachment } from '@/components/shared/rich-inpu
 import { createAnnouncement, deleteAnnouncement } from '@/actions/announcements'
 import { saveAttachments } from '@/actions/attachments'
 import { formatRelative } from '@/lib/utils'
+import { LinkText } from '@/components/shared/link-text'
 import { Plus, Megaphone, Trash2 } from 'lucide-react'
 
 interface User { id: string; name: string; avatar_url: string | null }
@@ -102,7 +103,9 @@ export function AnnouncementsClient({ announcements, canCreate, currentUserId, c
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{a.title}</h3>
-                      <p className="mt-1 text-sm text-gray-600">{a.content}</p>
+                      <p className="mt-1 text-sm text-gray-600">
+                        <LinkText text={a.content} />
+                      </p>
                       <div className="mt-2 flex items-center gap-2">
                         <Avatar name={a.author.name} src={a.author.avatar_url} size="sm" />
                         <span className="text-xs text-gray-400">{a.author.name} · {formatRelative(a.created_at)}</span>

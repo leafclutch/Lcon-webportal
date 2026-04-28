@@ -69,15 +69,16 @@ export interface Database {
         Row: {
           id: string; user_id: string; tap_in_time: string | null; tap_out_time: string | null;
           date: string; status: 'present' | 'late' | 'absent' | 'half_day';
-          created_at: string; updated_at: string
+          type: 'onsite' | 'remote'; created_at: string; updated_at: string
         }
         Insert: {
           user_id: string; tap_in_time?: string | null; tap_out_time?: string | null;
-          date?: string; status?: 'present' | 'late' | 'absent' | 'half_day'
+          date?: string; status?: 'present' | 'late' | 'absent' | 'half_day';
+          type?: 'onsite' | 'remote'
         }
         Update: {
           tap_in_time?: string | null; tap_out_time?: string | null;
-          status?: 'present' | 'late' | 'absent' | 'half_day'
+          status?: 'present' | 'late' | 'absent' | 'half_day'; type?: 'onsite' | 'remote'
         }
         Relationships: []
       }
@@ -137,13 +138,19 @@ export interface Database {
       messages: {
         Row: {
           id: string; sender_id: string; receiver_id: string; content: string | null;
-          voice_url: string | null; is_read: boolean; created_at: string
+          voice_url: string | null; is_read: boolean; is_seen: boolean;
+          is_delivered: boolean; is_edited: boolean; deleted_at: string | null;
+          created_at: string
         }
         Insert: {
           sender_id: string; receiver_id: string; content?: string | null;
-          voice_url?: string | null; is_read?: boolean
+          voice_url?: string | null; is_read?: boolean; is_seen?: boolean;
+          is_delivered?: boolean
         }
-        Update: { is_read?: boolean }
+        Update: {
+          is_read?: boolean; is_seen?: boolean; is_delivered?: boolean;
+          content?: string | null; is_edited?: boolean; deleted_at?: string | null
+        }
         Relationships: []
       }
       announcements: {
@@ -203,16 +210,24 @@ export interface Database {
       notifications: {
         Row: {
           id: string; user_id: string; title: string; body: string | null;
-          type: 'message' | 'task' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system';
+          type: 'message' | 'task' | 'comment' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system';
           entity_type: string | null; entity_id: string | null;
           is_read: boolean; created_at: string
         }
         Insert: {
           user_id: string; title: string; body?: string | null;
-          type: 'message' | 'task' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system';
+          type: 'message' | 'task' | 'comment' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system';
           entity_type?: string | null; entity_id?: string | null; is_read?: boolean
         }
         Update: { is_read?: boolean }
+        Relationships: []
+      }
+      task_comments: {
+        Row: {
+          id: string; task_id: string; user_id: string; content: string; created_at: string
+        }
+        Insert: { task_id: string; user_id: string; content: string }
+        Update: { content?: string }
         Relationships: []
       }
       attachments: {
@@ -256,6 +271,15 @@ export interface Database {
         Update: Record<string, never>
         Relationships: []
       }
+      attendance_breaks: {
+        Row: {
+          id: string; log_id: string; user_id: string;
+          start_time: string; end_time: string | null; created_at: string
+        }
+        Insert: { log_id: string; user_id: string; start_time?: string; end_time?: string | null }
+        Update: { end_time?: string | null }
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -292,6 +316,8 @@ export type Group = Database['public']['Tables']['groups']['Row']
 export type GroupMember = Database['public']['Tables']['group_members']['Row']
 export type GroupMessage = Database['public']['Tables']['group_messages']['Row']
 export type GroupMessageRead = Database['public']['Tables']['group_message_reads']['Row']
+export type TaskComment = Database['public']['Tables']['task_comments']['Row']
+export type AttendanceBreak = Database['public']['Tables']['attendance_breaks']['Row']
 
 // Extended types with joins
 export type UserWithRole = User & { roles: Role | null }

@@ -26,6 +26,12 @@ export type PermissionName =
   | 'issue_auto_warning'
   // Added in migration 005
   | 'create_group'
+  // Added in migration 006
+  | 'manage_messages'
+  | 'delete_message'
+  | 'use_remote_attendance'
+  | 'comment_on_tasks'
+  | 'view_notifications'
 
 export interface AuthUser {
   id: string

@@ -4,11 +4,12 @@ import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
-import { sendMessage } from '@/actions/messages'
+import { LinkText } from '@/components/shared/link-text'
+import { sendMessage, editMessage, deleteMessage } from '@/actions/messages'
 import { createGroup, sendGroupMessage, markGroupMessagesRead, deleteGroup } from '@/actions/groups'
 import { saveAttachments } from '@/actions/attachments'
 import { formatRelative } from '@/lib/utils'
-import { Send, MessageCircle, FileText, Link2, File, Users, Plus, X, Check, Trash2 } from 'lucide-react'
+import { Send, MessageCircle, FileText, Link2, File, Users, Plus, X, Check, CheckCheck, Trash2, Pencil, MailOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 
@@ -19,7 +20,8 @@ interface MsgAttachment { id: string; entity_id: string; type: string; name: str
 
 interface Message {
   id: string; sender_id: string; receiver_id: string; content: string | null;
-  voice_url: string | null; is_read: boolean; created_at: string;
+  voice_url: string | null; is_read: boolean; is_seen: boolean; is_delivered: boolean;
+  is_edited: boolean; deleted_at: string | null; created_at: string;
   sender: User; attachments: MsgAttachment[]
 }
 
@@ -57,6 +59,13 @@ function AttachmentPreview({ a }: { a: MsgAttachment }) {
   )
 }
 
+// ── Tick indicator ─────────────────────────────────────────────────────
+function MessageTick({ msg }: { msg: Message }) {
+  if (msg.is_seen) return <CheckCheck size={12} className="text-blue-400 shrink-0" />
+  if (msg.is_delivered) return <CheckCheck size={12} className="text-indigo-300/80 shrink-0" />
+  return <Check size={12} className="text-indigo-300/80 shrink-0" />
+}
+
 // ── Main Component ─────────────────────────────────────────────────────
 export function MessagesClient({
   users, allUsers, messages: initialMessages, groups: initialGroups,
@@ -79,6 +88,10 @@ export function MessagesClient({
   const [dmText, setDmText] = useState('')
   const [dmAttachments, setDmAttachments] = useState<PendingAttachment[]>([])
 
+  // Edit state
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
   // Group state
   const [groups, setGroups] = useState<Group[]>(initialGroups)
   const [allGroupMessages, setAllGroupMessages] = useState<GroupMessage[]>(initialGroupMessages)
@@ -97,6 +110,7 @@ export function MessagesClient({
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [isPending, startTransition] = useTransition()
+  const [editPending, startEditTransition] = useTransition()
   const bottomRef = useRef<HTMLDivElement>(null)
   const usersById = useRef<Record<string, User>>({})
 
@@ -110,16 +124,25 @@ export function MessagesClient({
     const supabase = createClient()
 
     const handleDmInsert = (payload: { new: Record<string, unknown> }) => {
-      const raw = payload.new as { id: string; sender_id: string; receiver_id: string; content: string | null; voice_url: string | null; is_read: boolean; created_at: string }
+      const raw = payload.new as unknown as Message
       setAllMessages(prev => {
         if (prev.some(m => m.id === raw.id)) return prev
         return [...prev, { ...raw, sender: usersById.current[raw.sender_id] ?? { id: raw.sender_id, name: 'Unknown', avatar_url: null }, attachments: [] }]
       })
     }
 
+    const handleDmUpdate = (payload: { new: Record<string, unknown> }) => {
+      const raw = payload.new as unknown as Message
+      setAllMessages(prev =>
+        prev.map(m => m.id === raw.id ? { ...m, ...raw, sender: m.sender, attachments: m.attachments } : m)
+      )
+    }
+
     const channel = supabase.channel(`dm:${currentUserId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` }, handleDmInsert)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${currentUserId}` }, handleDmInsert)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUserId}` }, handleDmUpdate)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `sender_id=eq.${currentUserId}` }, handleDmUpdate)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -171,12 +194,34 @@ export function MessagesClient({
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [dmConversation.length, groupConversation.length])
 
-  // ── Mark DM as read ──────────────────────────────────────────────────
+  // ── Mark DM as read (also sets delivered + seen) ─────────────────────
   const markDmRead = useCallback(async (contactId: string) => {
     const supabase = createClient()
-    await supabase.from('messages').update({ is_read: true }).eq('sender_id', contactId).eq('receiver_id', currentUserId).eq('is_read', false)
-    setAllMessages(prev => prev.map(m => m.sender_id === contactId && m.receiver_id === currentUserId ? { ...m, is_read: true } : m))
+    await supabase.from('messages')
+      .update({ is_read: true, is_delivered: true, is_seen: true })
+      .eq('sender_id', contactId)
+      .eq('receiver_id', currentUserId)
+      .eq('is_read', false)
+    setAllMessages(prev => prev.map(m =>
+      m.sender_id === contactId && m.receiver_id === currentUserId
+        ? { ...m, is_read: true, is_delivered: true, is_seen: true }
+        : m
+    ))
   }, [currentUserId])
+
+  // ── Mark conversation as unread ──────────────────────────────────────
+  const handleMarkUnread = useCallback(async (contactId: string) => {
+    const lastMsg = allMessages
+      .filter(m => m.sender_id === contactId && m.receiver_id === currentUserId && !m.deleted_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+    if (!lastMsg) return
+    const supabase = createClient()
+    await supabase.from('messages')
+      .update({ is_read: false, is_seen: false })
+      .eq('id', lastMsg.id)
+    setAllMessages(prev => prev.map(m => m.id === lastMsg.id ? { ...m, is_read: false, is_seen: false } : m))
+    if (selectedUser?.id === contactId) setSelectedUser(null)
+  }, [allMessages, currentUserId, selectedUser])
 
   // ── Mark group messages as read ──────────────────────────────────────
   const markGroupRead = useCallback(async (groupId: string) => {
@@ -205,6 +250,36 @@ export function MessagesClient({
     })
   }
 
+  // ── Edit message ─────────────────────────────────────────────────────
+  const handleStartEdit = (msg: Message) => {
+    setEditingId(msg.id)
+    setEditText(msg.content ?? '')
+  }
+
+  const handleSaveEdit = () => {
+    if (!editingId || !editText.trim()) return
+    const id = editingId
+    const text = editText.trim()
+    startEditTransition(async () => {
+      const res = await editMessage(id, text)
+      if (res.success) {
+        setAllMessages(prev => prev.map(m => m.id === id ? { ...m, content: text, is_edited: true } : m))
+      }
+      setEditingId(null)
+      setEditText('')
+    })
+  }
+
+  // ── Delete message ───────────────────────────────────────────────────
+  const handleDeleteMsg = (id: string) => {
+    startEditTransition(async () => {
+      const res = await deleteMessage(id)
+      if (res.success) {
+        setAllMessages(prev => prev.map(m => m.id === id ? { ...m, deleted_at: new Date().toISOString(), content: null } : m))
+      }
+    })
+  }
+
   // ── Send Group Message ───────────────────────────────────────────────
   const handleSendGroup = () => {
     if ((!groupText.trim() && !groupAttachments.length) || !selectedGroup) return
@@ -229,7 +304,6 @@ export function MessagesClient({
       const res = await createGroup(newGroupName.trim(), newGroupMembers)
       if (!res.success) { setCreateError(res.error); return }
       setShowCreateGroup(false); setNewGroupName(''); setNewGroupMembers([])
-      // Page will reload via revalidatePath — group appears on next navigation
     })
   }
 
@@ -278,7 +352,7 @@ export function MessagesClient({
     <div className="flex h-[calc(100vh-10rem)] overflow-hidden rounded-xl border border-gray-200 bg-white">
 
       {/* ── Left sidebar ────────────────────────────────────────────── */}
-      <div className="flex w-72 shrink-0 flex-col border-r border-gray-100">
+      <div className="flex w-64 shrink-0 flex-col border-r border-gray-100 lg:w-72">
         {/* Tabs */}
         <div className="flex border-b border-gray-100">
           <button onClick={() => setTab('direct')} className={cn('flex-1 py-3 text-sm font-medium transition-colors', tab === 'direct' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700')}>
@@ -293,21 +367,35 @@ export function MessagesClient({
         <div className="flex-1 overflow-y-auto">
           {tab === 'direct' ? (
             contactsWithMeta.map(({ user, lastMessage, unread }) => (
-              <button key={user.id} onClick={() => { setSelectedUser(user); setSelectedGroup(null); markDmRead(user.id) }}
-                className={cn('flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50', selectedUser?.id === user.id && 'bg-indigo-50')}>
-                <Avatar name={user.name} src={user.avatar_url} size="md" />
-                <div className="min-w-0 flex-1">
-                  <p className={cn('text-sm text-gray-900', unread > 0 ? 'font-semibold' : 'font-medium')}>{user.name}</p>
-                  {lastMessage && (
-                    <p className={cn('truncate text-xs', unread > 0 ? 'text-indigo-600 font-medium' : 'text-gray-500')}>
-                      {lastMessage.voice_url ? '🎤 Voice message' : lastMessage.content ?? '📎 Attachment'}
-                    </p>
-                  )}
-                </div>
-                {unread > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">{unread > 9 ? '9+' : unread}</span>
+              <div key={user.id} className="group relative">
+                <button onClick={() => { setSelectedUser(user); setSelectedGroup(null); markDmRead(user.id) }}
+                  className={cn('flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50', selectedUser?.id === user.id && 'bg-indigo-50')}>
+                  <Avatar name={user.name} src={user.avatar_url} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className={cn('text-sm text-gray-900', unread > 0 ? 'font-semibold' : 'font-medium')}>{user.name}</p>
+                    {lastMessage && (
+                      <p className={cn('truncate text-xs', unread > 0 ? 'text-indigo-600 font-medium' : 'text-gray-500')}>
+                        {lastMessage.deleted_at ? '🗑 Message deleted' : lastMessage.voice_url ? '🎤 Voice message' : lastMessage.content ?? '📎 Attachment'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {unread > 0 && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">{unread > 9 ? '9+' : unread}</span>
+                    )}
+                  </div>
+                </button>
+                {/* Mark as unread (shown on hover when there are read messages from this contact) */}
+                {lastMessage && lastMessage.sender_id === user.id && lastMessage.is_read && (
+                  <button
+                    onClick={() => handleMarkUnread(user.id)}
+                    title="Mark as unread"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 hidden rounded p-1 text-gray-300 hover:text-indigo-500 group-hover:flex"
+                  >
+                    <MailOpen size={13} />
+                  </button>
                 )}
-              </button>
+              </div>
             ))
           ) : (
             <>
@@ -357,18 +445,89 @@ export function MessagesClient({
               <Avatar name={selectedUser.name} src={selectedUser.avatar_url} />
               <p className="font-medium text-gray-900">{selectedUser.name}</p>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {dmConversation.length === 0 && <p className="text-center text-sm text-gray-400">No messages yet. Say hello!</p>}
-              {dmConversation.map(msg => (
-                <div key={msg.id} className={cn('flex', msg.sender_id === currentUserId ? 'justify-end' : 'justify-start')}>
-                  <div className={cn('max-w-[70%] rounded-2xl px-4 py-2 text-sm', msg.sender_id === currentUserId ? 'rounded-br-sm bg-indigo-600 text-white' : 'rounded-bl-sm bg-gray-100 text-gray-900')}>
-                    {msg.voice_url && <audio controls src={msg.voice_url} className="h-8 w-48" />}
-                    {msg.content && <p className="whitespace-pre-wrap wrap-break-word">{msg.content}</p>}
-                    {msg.attachments.length > 0 && <div className="mt-2 space-y-1">{msg.attachments.map(a => <AttachmentPreview key={a.id} a={a} />)}</div>}
-                    <p className={cn('mt-1 text-right text-xs', msg.sender_id === currentUserId ? 'text-indigo-200' : 'text-gray-400')}>{formatRelative(msg.created_at)}</p>
+            <div className="flex-1 overflow-y-auto p-4 space-y-1">
+              {dmConversation.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello!</p>}
+              {dmConversation.map(msg => {
+                const isOwn = msg.sender_id === currentUserId
+                const isEditing = editingId === msg.id
+
+                return (
+                  <div key={msg.id} className={cn('group flex items-end gap-1 py-0.5', isOwn ? 'flex-row-reverse' : 'flex-row')}>
+                    {/* Hover actions for own messages */}
+                    {isOwn && !msg.deleted_at && !isEditing && (
+                      <div className="hidden group-hover:flex items-center gap-0.5 pb-1">
+                        <button
+                          onClick={() => handleStartEdit(msg)}
+                          title="Edit"
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-500 transition-colors"
+                          disabled={editPending}
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMsg(msg.id)}
+                          title="Delete"
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-500 transition-colors"
+                          disabled={editPending}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    )}
+                    <div className={cn(
+                      'max-w-[70%] rounded-2xl px-4 py-2 text-sm',
+                      isOwn ? 'rounded-br-sm bg-indigo-600 text-white' : 'rounded-bl-sm bg-gray-100 text-gray-900',
+                      msg.deleted_at && 'opacity-60'
+                    )}>
+                      {msg.deleted_at ? (
+                        <p className="italic text-sm">This message was deleted</p>
+                      ) : (
+                        <>
+                          {msg.voice_url && <audio controls src={msg.voice_url} className="h-8 w-48" />}
+                          {isEditing ? (
+                            <div className="space-y-1 min-w-[180px]">
+                              <textarea
+                                value={editText}
+                                onChange={e => setEditText(e.target.value)}
+                                rows={2}
+                                autoFocus
+                                className="w-full resize-none rounded-lg border border-white/30 bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/50 focus:outline-none"
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveEdit() }
+                                  if (e.key === 'Escape') { setEditingId(null) }
+                                }}
+                              />
+                              <div className="flex gap-1 text-xs">
+                                <button onClick={handleSaveEdit} disabled={editPending} className="rounded bg-white/20 px-2 py-0.5 hover:bg-white/30">Save</button>
+                                <button onClick={() => setEditingId(null)} className="rounded px-2 py-0.5 hover:bg-white/10 opacity-70">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {msg.content && (
+                                <p>
+                                  <LinkText
+                                    text={msg.content}
+                                    linkClassName={cn('underline break-all', isOwn ? 'text-indigo-200 hover:text-white' : 'text-indigo-600 hover:text-indigo-800')}
+                                  />
+                                  {msg.is_edited && <span className="ml-1 text-[10px] opacity-60">(edited)</span>}
+                                </p>
+                              )}
+                            </>
+                          )}
+                          {!isEditing && msg.attachments.length > 0 && (
+                            <div className="mt-2 space-y-1">{msg.attachments.map(a => <AttachmentPreview key={a.id} a={a} />)}</div>
+                          )}
+                        </>
+                      )}
+                      <div className={cn('mt-1 flex items-center gap-1', isOwn ? 'justify-end' : 'justify-start')}>
+                        <p className={cn('text-xs', isOwn ? 'text-indigo-200' : 'text-gray-400')}>{formatRelative(msg.created_at)}</p>
+                        {isOwn && <MessageTick msg={msg} />}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <div ref={bottomRef} />
             </div>
             <div className="border-t border-gray-100 p-3">
@@ -406,11 +565,10 @@ export function MessagesClient({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {groupConversation.length === 0 && <p className="text-center text-sm text-gray-400">No messages yet. Start the conversation!</p>}
+              {groupConversation.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Start the conversation!</p>}
               {groupConversation.map((msg, idx) => {
                 const isOwn = msg.sender_id === currentUserId
                 const isLast = idx === groupConversation.length - 1
-                // Readers excluding sender
                 const readers = msg.readBy
                   .filter(uid => uid !== msg.sender_id)
                   .map(uid => selectedGroup.members.find(m => m?.id === uid))
@@ -426,11 +584,17 @@ export function MessagesClient({
                     )}
                     <div className={cn('max-w-[70%] rounded-2xl px-4 py-2 text-sm', isOwn ? 'rounded-br-sm bg-indigo-600 text-white' : 'rounded-bl-sm bg-gray-100 text-gray-900')}>
                       {msg.voice_url && <audio controls src={msg.voice_url} className="h-8 w-48" />}
-                      {msg.content && <p className="whitespace-pre-wrap wrap-break-word">{msg.content}</p>}
+                      {msg.content && (
+                        <p>
+                          <LinkText
+                            text={msg.content}
+                            linkClassName={cn('underline break-all', isOwn ? 'text-indigo-200 hover:text-white' : 'text-indigo-600 hover:text-indigo-800')}
+                          />
+                        </p>
+                      )}
                       {msg.attachments.length > 0 && <div className="mt-2 space-y-1">{msg.attachments.map(a => <AttachmentPreview key={a.id} a={a} />)}</div>}
                       <p className={cn('mt-1 text-right text-xs', isOwn ? 'text-indigo-200' : 'text-gray-400')}>{formatRelative(msg.created_at)}</p>
                     </div>
-                    {/* Seen-by row */}
                     {readers.length > 0 && (
                       <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-400">
                         <Check size={10} />
@@ -466,7 +630,7 @@ export function MessagesClient({
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center text-gray-400">
             {tab === 'groups' ? <Users className="mb-3 h-12 w-12" /> : <MessageCircle className="mb-3 h-12 w-12" />}
-            <p>{tab === 'groups' ? 'Select a group or create one' : 'Select a conversation to start messaging'}</p>
+            <p className="text-sm">{tab === 'groups' ? 'Select a group or create one' : 'Select a conversation to start messaging'}</p>
           </div>
         )}
       </div>

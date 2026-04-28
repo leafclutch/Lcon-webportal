@@ -44,6 +44,59 @@ export async function sendMessage(input: {
   return { success: true, data: { id: msg.id } }
 }
 
+export async function editMessage(id: string, content: string): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+
+  const { data: msg } = await supabase
+    .from('messages')
+    .select('sender_id, deleted_at')
+    .eq('id', id)
+    .single()
+
+  if (!msg) return { success: false, error: 'Message not found' }
+  if (msg.sender_id !== user.id) return { success: false, error: 'Can only edit your own messages' }
+  if (msg.deleted_at) return { success: false, error: 'Cannot edit a deleted message' }
+
+  const trimmed = content.trim()
+  if (!trimmed) return { success: false, error: 'Message cannot be empty' }
+
+  const { error } = await supabase
+    .from('messages')
+    .update({ content: trimmed, is_edited: true })
+    .eq('id', id)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, data: undefined }
+}
+
+export async function deleteMessage(id: string): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+
+  const { data: msg } = await supabase
+    .from('messages')
+    .select('sender_id')
+    .eq('id', id)
+    .single()
+
+  if (!msg) return { success: false, error: 'Message not found' }
+
+  const canDelete =
+    msg.sender_id === user.id || user.permissions.includes('delete_message')
+  if (!canDelete) return { success: false, error: 'Cannot delete this message' }
+
+  const { error } = await supabase
+    .from('messages')
+    .update({ deleted_at: new Date().toISOString(), content: null })
+    .eq('id', id)
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, data: undefined }
+}
+
 export async function markMessagesRead(senderId: string): Promise<ActionResult<void>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
@@ -51,7 +104,7 @@ export async function markMessagesRead(senderId: string): Promise<ActionResult<v
 
   const { error } = await supabase
     .from('messages')
-    .update({ is_read: true })
+    .update({ is_read: true, is_delivered: true, is_seen: true })
     .eq('sender_id', senderId)
     .eq('receiver_id', user.id)
     .eq('is_read', false)

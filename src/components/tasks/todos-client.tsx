@@ -12,6 +12,7 @@ import { RichInput, type PendingAttachment } from '@/components/shared/rich-inpu
 import { createTodo, updateTodoStatus, deleteTodo } from '@/actions/todos'
 import { saveAttachments } from '@/actions/attachments'
 import { statusColor } from '@/lib/utils'
+import { LinkText } from '@/components/shared/link-text'
 import { Plus, Trash2, CheckCircle2, Circle, Loader2 } from 'lucide-react'
 
 interface Todo {
@@ -164,7 +165,7 @@ function TodoItem({ todo, currentUserId, onToggle, onRequestDelete, isPending }:
           <p className={`text-sm font-medium ${todo.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
             {todo.title}
           </p>
-          {todo.description && <p className="text-xs text-gray-500 truncate">{todo.description}</p>}
+          {todo.description && <p className="text-xs text-gray-500"><LinkText text={todo.description} /></p>}
           {todo.users && todo.user_id !== currentUserId && (
             <div className="mt-1 flex items-center gap-1">
               <Avatar name={todo.users.name} src={todo.users.avatar_url} size="sm" />

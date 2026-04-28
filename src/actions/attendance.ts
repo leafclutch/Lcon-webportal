@@ -133,10 +133,161 @@ export async function getAllAttendanceLogs(filters?: {
 }
 
 export interface AllLog {
-  id: string; user_id: string; date: string; status: string;
+  id: string; user_id: string; date: string; status: string; type: string;
   tap_in_time: string | null; tap_out_time: string | null;
   created_at: string; updated_at: string;
   users?: { id: string; name: string; email: string; avatar_url: string | null } | null
+}
+
+export async function clockIn(): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+  if (!user.permissions.includes('use_remote_attendance')) {
+    return { success: false, error: 'You do not have permission for remote attendance' }
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+
+  const { data: existingLog } = await supabase
+    .from('attendance_logs')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('date', today)
+    .single()
+
+  if (existingLog?.tap_in_time) return { success: false, error: 'Already clocked in today' }
+
+  const hour = new Date().getHours()
+  const status = hour >= 9 ? 'late' : 'present'
+
+  if (existingLog) {
+    await supabase
+      .from('attendance_logs')
+      .update({ tap_in_time: now, status, type: 'remote' })
+      .eq('id', existingLog.id)
+  } else {
+    await supabase.from('attendance_logs').insert({
+      user_id: user.id,
+      tap_in_time: now,
+      date: today,
+      status,
+      type: 'remote',
+    })
+  }
+
+  revalidatePath('/attendance')
+  return { success: true, data: undefined }
+}
+
+export async function clockOut(): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+  if (!user.permissions.includes('use_remote_attendance')) {
+    return { success: false, error: 'You do not have permission for remote attendance' }
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+
+  const { data: existingLog } = await supabase
+    .from('attendance_logs')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('date', today)
+    .single()
+
+  if (!existingLog?.tap_in_time) {
+    return { success: false, error: 'Must clock in before clocking out' }
+  }
+  if (existingLog?.tap_out_time) {
+    return { success: false, error: 'Already clocked out today' }
+  }
+
+  await supabase
+    .from('attendance_logs')
+    .update({ tap_out_time: now })
+    .eq('id', existingLog.id)
+
+  revalidatePath('/attendance')
+  return { success: true, data: undefined }
+}
+
+export async function startBreak(): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+
+  const today = new Date().toISOString().slice(0, 10)
+
+  const { data: log } = await supabase
+    .from('attendance_logs')
+    .select('id, tap_in_time, tap_out_time')
+    .eq('user_id', user.id)
+    .eq('date', today)
+    .single()
+
+  if (!log?.tap_in_time) return { success: false, error: 'Must clock in first' }
+  if (log.tap_out_time) return { success: false, error: 'Already clocked out' }
+
+  const { data: openBreak } = await supabase
+    .from('attendance_breaks')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('log_id', log.id)
+    .is('end_time', null)
+    .single()
+
+  if (openBreak) return { success: false, error: 'Already on break' }
+
+  const { error } = await supabase.from('attendance_breaks').insert({
+    log_id: log.id,
+    user_id: user.id,
+  })
+
+  if (error) return { success: false, error: error.message }
+
+  revalidatePath('/attendance')
+  return { success: true, data: undefined }
+}
+
+export async function endBreak(): Promise<ActionResult<void>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+
+  const today = new Date().toISOString().slice(0, 10)
+
+  const { data: log } = await supabase
+    .from('attendance_logs')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('date', today)
+    .single()
+
+  if (!log) return { success: false, error: 'No attendance log found' }
+
+  const { data: openBreak } = await supabase
+    .from('attendance_breaks')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('log_id', log.id)
+    .is('end_time', null)
+    .single()
+
+  if (!openBreak) return { success: false, error: 'Not on break' }
+
+  const { error } = await supabase
+    .from('attendance_breaks')
+    .update({ end_time: new Date().toISOString() })
+    .eq('id', openBreak.id)
+
+  if (error) return { success: false, error: error.message }
+
+  revalidatePath('/attendance')
+  return { success: true, data: undefined }
 }
 
 export async function exportAttendanceCsv(filters?: {

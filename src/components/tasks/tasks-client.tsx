@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,10 +10,12 @@ import { ConfirmModal } from '@/components/ui/confirm-modal'
 import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
 import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
+import { LinkText } from '@/components/shared/link-text'
 import { createTaskBulk, updateTaskStatus, deleteTask } from '@/actions/tasks'
 import { saveAttachments } from '@/actions/attachments'
-import { formatDate, formatDateTime, priorityColor, statusColor } from '@/lib/utils'
-import { Plus, CheckSquare, Trash2, ChevronDown, ChevronUp, Maximize2, FileText, Link2, File, Image, Check } from 'lucide-react'
+import { getTaskComments, addTaskComment, deleteTaskComment, type TaskComment } from '@/actions/task-comments'
+import { formatDate, formatDateTime, formatRelative, priorityColor, statusColor } from '@/lib/utils'
+import { Plus, CheckSquare, Trash2, ChevronDown, ChevronUp, Maximize2, FileText, Link2, File, Image, Check, MessageSquare, Send, Loader2 } from 'lucide-react'
 
 interface User { id: string; name: string; avatar_url: string | null }
 interface TaskAttachment { id: string; entity_id: string; type: string; name: string | null; url: string; mime_type: string | null; size_bytes: number | null }
@@ -29,7 +31,10 @@ interface TasksClientProps {
   users: User[]
   canAssign: boolean
   canUpload: boolean
+  canComment: boolean
   currentUserId: string
+  currentUserName: string
+  currentUserAvatar: string | null
 }
 
 const PRIORITY_OPTIONS = [
@@ -80,7 +85,7 @@ function AttachmentChip({ a }: { a: TaskAttachment }) {
   )
 }
 
-export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId }: TasksClientProps) {
+export function TasksClient({ tasks, users, canAssign, canUpload, canComment, currentUserId, currentUserName, currentUserAvatar }: TasksClientProps) {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [detailTask, setDetailTask] = useState<Task | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -88,12 +93,29 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
   const [filter, setFilter] = useState('all')
   const [isPending, startTransition] = useTransition()
 
+  // Comments state
+  const [comments, setComments] = useState<TaskComment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentText, setCommentText] = useState('')
+  const [commentError, setCommentError] = useState<string | null>(null)
+  const [commentPending, startCommentTransition] = useTransition()
+
   // Create form state
   const [form, setForm] = useState({ title: '', priority: 'medium', deadline: '' })
   const [assignedTo, setAssignedTo] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  // Load comments when task detail opens
+  useEffect(() => {
+    if (!detailTask) { setComments([]); setCommentText(''); setCommentError(null); return }
+    setCommentsLoading(true)
+    getTaskComments(detailTask.id).then(data => {
+      setComments(data)
+      setCommentsLoading(false)
+    })
+  }, [detailTask?.id])
 
   const filtered = filter === 'all' ? tasks : tasks.filter(t => t.status === filter)
 
@@ -155,6 +177,31 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
   const handleDelete = () => {
     if (!confirmId) return
     startTransition(async () => { await deleteTask(confirmId); setConfirmId(null); setDetailTask(null) })
+  }
+
+  const handleAddComment = () => {
+    if (!commentText.trim() || !detailTask) return
+    setCommentError(null)
+    startCommentTransition(async () => {
+      const res = await addTaskComment(detailTask.id, commentText.trim())
+      if (!res.success) { setCommentError(res.error); return }
+      setComments(prev => [...prev, {
+        id: res.data.id,
+        task_id: detailTask.id,
+        user_id: currentUserId,
+        content: commentText.trim(),
+        created_at: new Date().toISOString(),
+        user: { id: currentUserId, name: currentUserName, avatar_url: currentUserAvatar },
+      }])
+      setCommentText('')
+    })
+  }
+
+  const handleDeleteComment = (commentId: string) => {
+    startCommentTransition(async () => {
+      const res = await deleteTaskComment(commentId)
+      if (res.success) setComments(prev => prev.filter(c => c.id !== commentId))
+    })
   }
 
   return (
@@ -239,7 +286,7 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
                   {isExpanded && (
                     <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
                       {task.description && (
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{task.description}</p>
+                        <p className="text-sm text-gray-700"><LinkText text={task.description} /></p>
                       )}
                       {task.attachments.length > 0 && (
                         <div className="flex flex-wrap gap-2">
@@ -273,7 +320,7 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900">{detailTask.title}</h3>
-              {detailTask.description && <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">{detailTask.description}</p>}
+              {detailTask.description && <p className="mt-2 text-sm text-gray-600"><LinkText text={detailTask.description} /></p>}
             </div>
             {detailTask.attachments.length > 0 && (
               <div>
@@ -323,6 +370,71 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
                 {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+
+            {/* Comments section */}
+            <div className="border-t border-gray-100 pt-3">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                <MessageSquare size={13} />
+                Comments ({comments.length})
+              </p>
+              {commentsLoading ? (
+                <div className="flex items-center gap-2 py-3 text-xs text-gray-400">
+                  <Loader2 size={12} className="animate-spin" /> Loading…
+                </div>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto">
+                  {comments.length === 0 && (
+                    <p className="py-2 text-xs text-gray-400">No comments yet.</p>
+                  )}
+                  {comments.map(c => (
+                    <div key={c.id} className="group flex items-start gap-2">
+                      <Avatar name={c.user.name} src={c.user.avatar_url} size="sm" />
+                      <div className="min-w-0 flex-1 rounded-lg bg-gray-50 px-3 py-2 text-xs">
+                        <div className="mb-0.5 flex items-center justify-between gap-2">
+                          <span className="font-medium text-gray-800">{c.user.name}</span>
+                          <span className="text-gray-400">{formatRelative(c.created_at)}</span>
+                        </div>
+                        <LinkText text={c.content} className="text-gray-700" />
+                      </div>
+                      {c.user_id === currentUserId && (
+                        <button
+                          onClick={() => handleDeleteComment(c.id)}
+                          disabled={commentPending}
+                          className="mt-1 hidden shrink-0 text-gray-300 hover:text-red-500 group-hover:block"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {canComment && (
+                <>
+                  {commentError && (
+                    <p className="mt-1 text-xs text-red-500">{commentError}</p>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={commentText}
+                      onChange={e => setCommentText(e.target.value)}
+                      placeholder="Add a comment…"
+                      disabled={commentPending}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment() } }}
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                    <button
+                      onClick={handleAddComment}
+                      disabled={!commentText.trim() || commentPending}
+                      className="rounded-lg bg-indigo-600 p-1.5 text-white hover:bg-indigo-700 disabled:opacity-40"
+                    >
+                      <Send size={13} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="flex gap-2 pt-1">
               <Button variant="outline" onClick={() => setDetailTask(null)} className="flex-1">Close</Button>
               {canAssign && (

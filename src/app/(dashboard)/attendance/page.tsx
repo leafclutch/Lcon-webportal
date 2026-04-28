@@ -10,8 +10,10 @@ export default async function AttendancePage() {
 
   const canViewAll = user?.permissions.includes('view_all_attendance') ?? false
   const canExport = user?.permissions.includes('export_attendance') ?? false
+  const canRemote = user?.permissions.includes('use_remote_attendance') ?? false
+  const today = new Date().toISOString().slice(0, 10)
 
-  const [{ data: logs }, { data: activeCodes }, usersResult, allLogsResult] = await Promise.all([
+  const [{ data: logs }, { data: activeCodes }, usersResult, allLogsResult, { data: todayBreaks }, { data: activeBreaks }] = await Promise.all([
     supabase
       .from('attendance_logs')
       .select('*')
@@ -22,7 +24,7 @@ export default async function AttendancePage() {
       ? supabase
           .from('attendance_codes')
           .select('*')
-          .eq('date', new Date().toISOString().slice(0, 10))
+          .eq('date', today)
           .eq('is_active', true)
           .gt('expires_at', new Date().toISOString())
       : Promise.resolve({ data: [] }),
@@ -32,9 +34,22 @@ export default async function AttendancePage() {
     canViewAll
       ? supabase
           .from('attendance_logs')
-          .select('id, user_id, date, status, tap_in_time, tap_out_time, created_at, updated_at')
+          .select('id, user_id, date, status, type, tap_in_time, tap_out_time, created_at, updated_at')
           .order('date', { ascending: false })
           .limit(200)
+      : Promise.resolve({ data: [] }),
+    supabase
+      .from('attendance_breaks')
+      .select('*')
+      .eq('user_id', user?.id ?? '')
+      .gte('start_time', today + 'T00:00:00')
+      .order('start_time', { ascending: true }),
+    canViewAll
+      ? supabase
+          .from('attendance_breaks')
+          .select('user_id')
+          .is('end_time', null)
+          .gte('start_time', today + 'T00:00:00')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -48,6 +63,9 @@ export default async function AttendancePage() {
         canGenerateCode={user?.permissions.includes('generate_attendance_code') ?? false}
         canViewAll={canViewAll}
         canExport={canExport}
+        canRemote={canRemote}
+        todayBreaks={todayBreaks ?? []}
+        activeBreaks={activeBreaks ?? []}
       />
     </DashboardShell>
   )

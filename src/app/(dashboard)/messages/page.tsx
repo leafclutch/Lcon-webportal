@@ -16,7 +16,7 @@ export default async function MessagesPage() {
     supabase.from('users').select('id, name, avatar_url').neq('id', user?.id ?? '').order('name'),
     supabase
       .from('messages')
-      .select('id, sender_id, receiver_id, content, voice_url, is_read, created_at')
+      .select('id, sender_id, receiver_id, content, voice_url, is_read, is_seen, is_delivered, is_edited, deleted_at, created_at')
       .or(`sender_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
       .order('created_at', { ascending: false })
       .limit(200),
