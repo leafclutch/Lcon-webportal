@@ -1,0 +1,15 @@
+npm install
+npm run build
+npx opennextjs-cloudflare build
+npx wrangler deploy
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+future deployments:: 
+- npm run deploy
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++
+if cloudflare is not login:
+- npx wrangler login
+- npx wrangler whoami
+- npm run deploy
