@@ -13,7 +13,9 @@
       "Bash(npx opennextjs-cloudflare *)",
       "Bash(./node_modules/.bin/next build *)",
       "Bash(npx --prefix /home/sid/leafclutch/Lcon-webportal tsc --noEmit)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(vercel --version)",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }
