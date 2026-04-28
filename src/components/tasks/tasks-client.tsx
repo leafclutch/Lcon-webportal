@@ -10,10 +10,10 @@ import { ConfirmModal } from '@/components/ui/confirm-modal'
 import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
 import { RichInput, type PendingAttachment } from '@/components/shared/rich-input'
-import { createTask, updateTaskStatus, deleteTask } from '@/actions/tasks'
+import { createTaskBulk, updateTaskStatus, deleteTask } from '@/actions/tasks'
 import { saveAttachments } from '@/actions/attachments'
 import { formatDate, formatDateTime, priorityColor, statusColor } from '@/lib/utils'
-import { Plus, CheckSquare, Trash2, ChevronDown, ChevronUp, Maximize2, FileText, Link2, File, Image } from 'lucide-react'
+import { Plus, CheckSquare, Trash2, ChevronDown, ChevronUp, Maximize2, FileText, Link2, File, Image, Check } from 'lucide-react'
 
 interface User { id: string; name: string; avatar_url: string | null }
 interface TaskAttachment { id: string; entity_id: string; type: string; name: string | null; url: string; mime_type: string | null; size_bytes: number | null }
@@ -89,7 +89,8 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
   const [isPending, startTransition] = useTransition()
 
   // Create form state
-  const [form, setForm] = useState({ title: '', assigned_to: '', priority: 'medium', deadline: '' })
+  const [form, setForm] = useState({ title: '', priority: 'medium', deadline: '' })
+  const [assignedTo, setAssignedTo] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -105,35 +106,41 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
   }
 
   const handleCreate = () => {
-    if (!form.title || !form.assigned_to) { setError('Title and assignee are required'); return }
+    if (!form.title) { setError('Title is required'); return }
+    if (assignedTo.length === 0) { setError('Select at least one assignee'); return }
     if (attachments.some(a => a.uploading)) { setError('Please wait for uploads to finish'); return }
     setError(null)
     startTransition(async () => {
-      const res = await createTask({
+      const res = await createTaskBulk({
         title: form.title,
         description: description || undefined,
-        assigned_to: form.assigned_to,
+        assigned_to: assignedTo,
         priority: form.priority as 'low' | 'medium' | 'high' | 'urgent',
         deadline: form.deadline || undefined,
       })
       if (!res.success) { setError(res.error); return }
 
       if (attachments.length > 0) {
-        await saveAttachments(
-          attachments.filter(a => a.url).map(a => ({
-            entity_type: 'task' as const,
-            entity_id: res.data.id,
-            type: a.type,
-            name: a.name,
-            url: a.url,
-            mime_type: a.mimeType,
-            size_bytes: a.sizeBytes,
-          }))
+        await Promise.all(
+          res.data.ids.map(taskId =>
+            saveAttachments(
+              attachments.filter(a => a.url).map(a => ({
+                entity_type: 'task' as const,
+                entity_id: taskId,
+                type: a.type,
+                name: a.name,
+                url: a.url,
+                mime_type: a.mimeType,
+                size_bytes: a.sizeBytes,
+              }))
+            )
+          )
         )
       }
 
       setShowCreateModal(false)
-      setForm({ title: '', assigned_to: '', priority: 'medium', deadline: '' })
+      setForm({ title: '', priority: 'medium', deadline: '' })
+      setAssignedTo([])
       setDescription('')
       setAttachments([])
     })
@@ -327,7 +334,7 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
       )}
 
       {/* Create Task Modal */}
-      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Assign New Task" className="max-w-lg">
+      <Modal open={showCreateModal} onClose={() => { setShowCreateModal(false); setAssignedTo([]); setError(null) }} title="Assign New Task" className="max-w-lg">
         <div className="space-y-4">
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
           <Input label="Title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" />
@@ -352,20 +359,37 @@ export function TasksClient({ tasks, users, canAssign, canUpload, currentUserId 
               />
             )}
           </div>
-          <Select
-            label="Assign To"
-            options={users.map(u => ({ value: u.id, label: u.name }))}
-            placeholder="Select team member..."
-            value={form.assigned_to}
-            onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
-          />
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Assign To
+              {assignedTo.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-indigo-600">{assignedTo.length} selected</span>
+              )}
+            </label>
+            <div className="max-h-44 overflow-y-auto rounded-lg border border-gray-200 p-1">
+              {users.map(u => {
+                const selected = assignedTo.includes(u.id)
+                return (
+                  <button key={u.id} type="button"
+                    onClick={() => setAssignedTo(prev => selected ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors ${selected ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50 text-gray-700'}`}>
+                    <Avatar name={u.name} src={u.avatar_url} size="sm" />
+                    <span className="flex-1">{u.name}</span>
+                    {selected && <Check size={14} className="text-indigo-600 shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Select label="Priority" options={PRIORITY_OPTIONS} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} />
             <Input label="Deadline" type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
           </div>
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={() => setShowCreateModal(false)} className="flex-1">Cancel</Button>
-            <Button onClick={handleCreate} loading={isPending} className="flex-1">Assign Task</Button>
+            <Button variant="outline" onClick={() => { setShowCreateModal(false); setAssignedTo([]); setError(null) }} className="flex-1">Cancel</Button>
+            <Button onClick={handleCreate} loading={isPending} className="flex-1">
+              {assignedTo.length > 1 ? `Assign to ${assignedTo.length} Members` : 'Assign Task'}
+            </Button>
           </div>
         </div>
       </Modal>

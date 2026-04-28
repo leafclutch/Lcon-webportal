@@ -14,6 +14,52 @@ interface CreateTaskInput {
   priority: 'low' | 'medium' | 'high' | 'urgent'
 }
 
+export async function createTaskBulk(
+  input: Omit<CreateTaskInput, 'assigned_to'> & { assigned_to: string[] }
+): Promise<ActionResult<{ ids: string[] }>> {
+  const supabase = await createClient()
+  const user = await getCurrentUser()
+  if (!user) return { success: false, error: 'Unauthorized' }
+  if (!user.permissions.includes('assign_task')) {
+    return { success: false, error: 'You do not have permission to assign tasks' }
+  }
+
+  const rows = input.assigned_to.map(uid => ({
+    title: input.title,
+    description: input.description ?? null,
+    assigned_to: uid,
+    assigned_by: user.id,
+    deadline: input.deadline ?? null,
+    priority: input.priority,
+    status: 'pending' as const,
+  }))
+
+  const { data: tasks, error } = await supabase
+    .from('tasks')
+    .insert(rows)
+    .select('id, assigned_to')
+
+  if (error) return { success: false, error: error.message }
+
+  await Promise.all(
+    (tasks ?? [])
+      .filter(t => t.assigned_to !== user.id)
+      .map(t =>
+        createNotification({
+          user_id: t.assigned_to,
+          title: 'New task assigned',
+          body: `${user.name} assigned you: "${input.title}"`,
+          type: 'task',
+          entity_type: 'task',
+          entity_id: t.id,
+        })
+      )
+  )
+
+  revalidatePath('/tasks')
+  return { success: true, data: { ids: (tasks ?? []).map(t => t.id) } }
+}
+
 export async function createTask(input: CreateTaskInput): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient()
   const user = await getCurrentUser()
