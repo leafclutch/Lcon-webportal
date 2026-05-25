@@ -7,11 +7,20 @@ export default async function UpdatesPage() {
   const supabase = await createClient()
   const user = await getCurrentUser()
 
-  const { data: rawUpdates } = await supabase
+  const canViewAll = user?.permissions.includes('view_daily_updates') ?? false
+
+  let query = supabase
     .from('daily_updates')
     .select('id, user_id, content, created_at')
     .order('created_at', { ascending: false })
     .limit(50)
+
+  // Members without the permission only see their own updates
+  if (!canViewAll && user?.id) {
+    query = query.eq('user_id', user.id)
+  }
+
+  const { data: rawUpdates } = await query
 
   const authorIds = [...new Set((rawUpdates ?? []).map(u => u.user_id))]
   const { data: authors } = authorIds.length
@@ -31,8 +40,9 @@ export default async function UpdatesPage() {
         currentUserId={user?.id ?? ''}
         type="update"
         placeholder="What did you work on today?"
-        emptyText="No updates posted today"
+        emptyText={canViewAll ? 'No updates posted yet' : 'You have not posted an update today'}
         canUpload={user?.permissions.includes('upload_attachments') ?? false}
+        canViewAll={canViewAll}
       />
     </DashboardShell>
   )

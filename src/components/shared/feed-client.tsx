@@ -23,9 +23,10 @@ interface FeedClientProps {
   placeholder: string
   emptyText: string
   canUpload: boolean
+  canViewAll?: boolean
 }
 
-export function FeedClient({ items, currentUserId, type, placeholder, emptyText, canUpload }: FeedClientProps) {
+export function FeedClient({ items, currentUserId, type, placeholder, emptyText, canUpload, canViewAll = true }: FeedClientProps) {
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -123,7 +124,7 @@ export function FeedClient({ items, currentUserId, type, placeholder, emptyText,
                     </div>
                     <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{item.content}</p>
                   </div>
-                  {item.users?.id === currentUserId && (
+                  {(item.users?.id === currentUserId || canViewAll) && (
                     <button onClick={() => setConfirmId(item.id)} disabled={isPending}
                       className="shrink-0 text-gray-300 hover:text-red-500 disabled:opacity-50">
                       <Trash2 size={14} />
