@@ -24,7 +24,7 @@ import {
   Coffee, Play, Timer,
 } from 'lucide-react'
 import type { AttendanceCode, AttendanceLog, AttendanceBreak } from '@/types'
-import type { AllLog } from '@/actions/attendance'
+import type { AllLog, AllLogBreak } from '@/actions/attendance'
 
 interface UserInfo { id: string; name: string; email: string; avatar_url: string | null }
 
@@ -39,6 +39,7 @@ interface AttendanceClientProps {
   canRemote: boolean
   todayBreaks: AttendanceBreak[]
   activeBreaks: { user_id: string }[]
+  allPersonalBreaks: AttendanceBreak[]
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -62,6 +63,33 @@ function totalBreakMins(breaks: AttendanceBreak[]) {
   return breaks.reduce((sum, b) => sum + breakDurationMins(b), 0)
 }
 
+function formatDuration(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function calcBreakMs(breaks: AllLogBreak[] | AttendanceBreak[]): number {
+  return breaks.reduce((sum, b) => {
+    if (!b.end_time) return sum
+    return sum + (new Date(b.end_time).getTime() - new Date(b.start_time).getTime())
+  }, 0)
+}
+
+function calcWorkingHours(tapIn: string | null, tapOut: string | null, breaks: AllLogBreak[] | AttendanceBreak[]): string {
+  if (!tapIn || !tapOut) return '—'
+  const gross = new Date(tapOut).getTime() - new Date(tapIn).getTime()
+  return formatDuration(gross - calcBreakMs(breaks))
+}
+
+function calcBreakHours(breaks: AllLogBreak[] | AttendanceBreak[]): string {
+  const completed = breaks.filter(b => b.end_time)
+  if (completed.length === 0) return '—'
+  return formatDuration(calcBreakMs(completed))
+}
+
 export function AttendanceClient({
   logs,
   activeCodes,
@@ -73,6 +101,7 @@ export function AttendanceClient({
   canRemote,
   todayBreaks,
   activeBreaks,
+  allPersonalBreaks,
 }: AttendanceClientProps) {
   const [tab, setTab] = useState<'my' | 'all'>('my')
   const [code, setCode] = useState('')
@@ -430,7 +459,7 @@ export function AttendanceClient({
               <CardTitle className="text-base">My Attendance History</CardTitle>
             </CardHeader>
             <CardContent>
-              <AttendanceTable logs={logs} />
+              <AttendanceTable logs={logs} breaks={allPersonalBreaks} />
             </CardContent>
           </Card>
         </>
@@ -500,13 +529,15 @@ export function AttendanceClient({
                       <th className="pb-2 text-left font-medium text-gray-500">Date</th>
                       <th className="pb-2 text-left font-medium text-gray-500">Clock In</th>
                       <th className="pb-2 text-left font-medium text-gray-500">Clock Out</th>
+                      <th className="pb-2 text-left font-medium text-gray-500">Working Hrs</th>
+                      <th className="pb-2 text-left font-medium text-gray-500">Break Hrs</th>
                       <th className="pb-2 text-left font-medium text-gray-500">Type</th>
                       <th className="pb-2 text-left font-medium text-gray-500">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {allLogs.length === 0 ? (
-                      <tr><td colSpan={6} className="py-6 text-center text-gray-400">No records found</td></tr>
+                      <tr><td colSpan={8} className="py-6 text-center text-gray-400">No records found</td></tr>
                     ) : (
                       allLogs.map(log => {
                         const u = userMap[log.user_id]
@@ -533,6 +564,12 @@ export function AttendanceClient({
                             </td>
                             <td className="py-2 text-gray-600">
                               {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
+                            </td>
+                            <td className="py-2 font-mono text-gray-700 text-xs">
+                              {calcWorkingHours(log.tap_in_time, log.tap_out_time, log.breaks ?? [])}
+                            </td>
+                            <td className="py-2 font-mono text-gray-700 text-xs">
+                              {calcBreakHours(log.breaks ?? [])}
                             </td>
                             <td className="py-2">
                               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${log.type === 'remote' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-600 bg-gray-100'}`}>
@@ -561,7 +598,13 @@ export function AttendanceClient({
   )
 }
 
-function AttendanceTable({ logs }: { logs: AttendanceLog[] }) {
+function AttendanceTable({ logs, breaks }: { logs: AttendanceLog[]; breaks: AttendanceBreak[] }) {
+  const breakMap = breaks.reduce<Record<string, AttendanceBreak[]>>((acc, b) => {
+    if (!acc[b.log_id]) acc[b.log_id] = []
+    acc[b.log_id].push(b)
+    return acc
+  }, {})
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -570,29 +613,40 @@ function AttendanceTable({ logs }: { logs: AttendanceLog[] }) {
             <th className="pb-2 text-left font-medium text-gray-500">Date</th>
             <th className="pb-2 text-left font-medium text-gray-500">Clock In</th>
             <th className="pb-2 text-left font-medium text-gray-500">Clock Out</th>
+            <th className="pb-2 text-left font-medium text-gray-500">Working Hrs</th>
+            <th className="pb-2 text-left font-medium text-gray-500">Break Hrs</th>
             <th className="pb-2 text-left font-medium text-gray-500">Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
           {logs.length === 0 ? (
-            <tr><td colSpan={4} className="py-6 text-center text-gray-400">No attendance records</td></tr>
+            <tr><td colSpan={6} className="py-6 text-center text-gray-400">No attendance records</td></tr>
           ) : (
-            logs.map(log => (
-              <tr key={log.id}>
-                <td className="py-2 font-medium">{log.date}</td>
-                <td className="py-2 text-gray-600">
-                  {log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}
-                </td>
-                <td className="py-2 text-gray-600">
-                  {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
-                </td>
-                <td className="py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>
-                    {log.status}
-                  </span>
-                </td>
-              </tr>
-            ))
+            logs.map(log => {
+              const logBreaks = breakMap[log.id] ?? []
+              return (
+                <tr key={log.id}>
+                  <td className="py-2 font-medium">{log.date}</td>
+                  <td className="py-2 text-gray-600">
+                    {log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}
+                  </td>
+                  <td className="py-2 text-gray-600">
+                    {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
+                  </td>
+                  <td className="py-2 font-mono text-gray-700 text-xs">
+                    {calcWorkingHours(log.tap_in_time, log.tap_out_time, logBreaks)}
+                  </td>
+                  <td className="py-2 font-mono text-gray-700 text-xs">
+                    {calcBreakHours(logBreaks)}
+                  </td>
+                  <td className="py-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>
+                      {log.status}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })
           )}
         </tbody>
       </table>

@@ -129,13 +129,34 @@ export async function getAllAttendanceLogs(filters?: {
 
   // Cast via unknown — the join is valid at runtime but the SDK types lack the relationship mapping
   const { data } = await query.limit(200)
-  return (data ?? []) as unknown as AllLog[]
+  const logs = (data ?? []) as unknown as AllLog[]
+
+  if (logs.length === 0) return logs
+
+  const logIds = logs.map(l => l.id)
+  const { data: breaks } = await supabase
+    .from('attendance_breaks')
+    .select('id, log_id, start_time, end_time')
+    .in('log_id', logIds)
+
+  const breakMap = (breaks ?? []).reduce<Record<string, AllLogBreak[]>>((acc, b) => {
+    if (!acc[b.log_id]) acc[b.log_id] = []
+    acc[b.log_id].push(b)
+    return acc
+  }, {})
+
+  return logs.map(l => ({ ...l, breaks: breakMap[l.id] ?? [] }))
+}
+
+export interface AllLogBreak {
+  id: string; log_id: string; start_time: string; end_time: string | null
 }
 
 export interface AllLog {
   id: string; user_id: string; date: string; status: string; type: string;
   tap_in_time: string | null; tap_out_time: string | null;
   created_at: string; updated_at: string;
+  breaks: AllLogBreak[];
   users?: { id: string; name: string; email: string; avatar_url: string | null } | null
 }
 
@@ -305,7 +326,7 @@ export async function exportAttendanceCsv(filters?: {
   type Status = 'present' | 'late' | 'absent' | 'half_day'
   let query = supabase
     .from('attendance_logs')
-    .select('date, status, tap_in_time, tap_out_time, user_id')
+    .select('id, date, status, type, tap_in_time, tap_out_time, user_id')
     .order('date', { ascending: false })
 
   if (filters?.userId) query = query.eq('user_id', filters.userId)
@@ -316,8 +337,10 @@ export async function exportAttendanceCsv(filters?: {
   const { data: logs, error } = await query.limit(2000)
   if (error) return { success: false, error: error.message }
 
+  const rows = logs ?? []
+
   // Fetch user names separately to avoid join type issues
-  const userIds = [...new Set((logs ?? []).map(l => l.user_id))]
+  const userIds = [...new Set(rows.map(l => l.user_id))]
   const userMap: Record<string, { name: string; email: string }> = {}
   if (userIds.length) {
     const { data: usersData } = await supabase
@@ -327,19 +350,52 @@ export async function exportAttendanceCsv(filters?: {
     for (const u of usersData ?? []) userMap[u.id] = u
   }
 
-  const rows = logs ?? []
-  const headers = ['Date', 'Name', 'Email', 'Tap In', 'Tap Out', 'Status']
+  // Fetch breaks for all logs
+  const logIds = rows.map(l => l.id)
+  const breakMap: Record<string, { start_time: string; end_time: string | null }[]> = {}
+  if (logIds.length) {
+    const { data: breaksData } = await supabase
+      .from('attendance_breaks')
+      .select('log_id, start_time, end_time')
+      .in('log_id', logIds)
+    for (const b of breaksData ?? []) {
+      if (!breakMap[b.log_id]) breakMap[b.log_id] = []
+      breakMap[b.log_id].push(b)
+    }
+  }
+
+  const fmtDuration = (ms: number) => {
+    const total = Math.floor(Math.max(0, ms) / 1000)
+    const h = Math.floor(total / 3600)
+    const m = Math.floor((total % 3600) / 60)
+    const s = total % 60
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+
+  const headers = ['Date', 'Name', 'Email', 'Tap In', 'Tap Out', 'Working Hours', 'Break Hours', 'Type', 'Status']
 
   const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`
 
   const csvRows = rows.map(log => {
     const u = userMap[log.user_id]
+    const logBreaks = breakMap[log.id] ?? []
+    const breakMs = logBreaks.reduce((sum, b) => {
+      if (!b.end_time) return sum
+      return sum + (new Date(b.end_time).getTime() - new Date(b.start_time).getTime())
+    }, 0)
+    const workingHrs = log.tap_in_time && log.tap_out_time
+      ? fmtDuration(new Date(log.tap_out_time).getTime() - new Date(log.tap_in_time).getTime() - breakMs)
+      : ''
+    const breakHrs = logBreaks.some(b => b.end_time) ? fmtDuration(breakMs) : ''
     return [
       log.date,
       u?.name ?? '',
       u?.email ?? '',
       log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '',
       log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '',
+      workingHrs,
+      breakHrs,
+      log.type ?? '',
       log.status,
     ].map(escape).join(',')
   })
@@ -347,7 +403,7 @@ export async function exportAttendanceCsv(filters?: {
   const csv = [headers.map(escape).join(','), ...csvRows].join('\n')
   const start = filters?.startDate ?? 'all'
   const end = filters?.endDate ?? 'all'
-  const filename = `attendance_${start}_to_${end}.csv`
+  const filename = `LCON - Attendance _${start}_to_${end}.csv`
 
   return { success: true, data: { csv, filename } }
 }

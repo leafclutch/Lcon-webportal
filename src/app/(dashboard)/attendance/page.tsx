@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/permissions'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { AttendanceClient } from '@/components/attendance/attendance-client'
-import type { AllLog } from '@/actions/attendance'
+import { getAllAttendanceLogs } from '@/actions/attendance'
 
 export default async function AttendancePage() {
   const supabase = await createClient()
@@ -13,7 +13,7 @@ export default async function AttendancePage() {
   const canRemote = user?.permissions.includes('use_remote_attendance') ?? false
   const today = new Date().toISOString().slice(0, 10)
 
-  const [{ data: logs }, { data: activeCodes }, usersResult, allLogsResult, { data: todayBreaks }, { data: activeBreaks }] = await Promise.all([
+  const [{ data: logs }, { data: activeCodes }, usersResult, allLogs, { data: todayBreaks }, { data: activeBreaks }, { data: allPersonalBreaks }] = await Promise.all([
     supabase
       .from('attendance_logs')
       .select('*')
@@ -32,12 +32,8 @@ export default async function AttendancePage() {
       ? supabase.from('users').select('id, name, email, avatar_url').order('name')
       : Promise.resolve({ data: [] }),
     canViewAll
-      ? supabase
-          .from('attendance_logs')
-          .select('id, user_id, date, status, type, tap_in_time, tap_out_time, created_at, updated_at')
-          .order('date', { ascending: false })
-          .limit(200)
-      : Promise.resolve({ data: [] }),
+      ? getAllAttendanceLogs()
+      : Promise.resolve([]),
     supabase
       .from('attendance_breaks')
       .select('*')
@@ -51,6 +47,11 @@ export default async function AttendancePage() {
           .is('end_time', null)
           .gte('start_time', today + 'T00:00:00')
       : Promise.resolve({ data: [] }),
+    supabase
+      .from('attendance_breaks')
+      .select('*')
+      .eq('user_id', user?.id ?? '')
+      .order('start_time', { ascending: true }),
   ])
 
   return (
@@ -58,7 +59,7 @@ export default async function AttendancePage() {
       <AttendanceClient
         logs={logs ?? []}
         activeCodes={activeCodes ?? []}
-        allLogs={allLogsResult.data ?? []}
+        allLogs={Array.isArray(allLogs) ? allLogs : []}
         allUsers={usersResult.data ?? []}
         canGenerateCode={user?.permissions.includes('generate_attendance_code') ?? false}
         canViewAll={canViewAll}
@@ -66,6 +67,7 @@ export default async function AttendancePage() {
         canRemote={canRemote}
         todayBreaks={todayBreaks ?? []}
         activeBreaks={activeBreaks ?? []}
+        allPersonalBreaks={allPersonalBreaks ?? []}
       />
     </DashboardShell>
   )
