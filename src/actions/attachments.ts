@@ -1,8 +1,18 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getCurrentUser } from '@/lib/auth/permissions'
 import type { ActionResult } from '@/types'
+import type { Database } from '@/types/database'
+
+// Service-role client bypasses storage RLS — safe for server-only uploads
+function getAdminClient() {
+  return createAdminClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export interface AttachmentRecord {
   entity_type: 'task' | 'todo' | 'message' | 'announcement' | 'daily_update' | 'idea' | 'group_message'
@@ -18,7 +28,6 @@ export interface AttachmentRecord {
 export async function uploadToStorage(
   formData: FormData
 ): Promise<ActionResult<{ url: string; name: string; mimeType: string; sizeBytes: number }>> {
-  const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
   if (!user.permissions.includes('upload_attachments')) {
@@ -28,7 +37,6 @@ export async function uploadToStorage(
   const file = formData.get('file') as File
   if (!file || !file.size) return { success: false, error: 'No file provided' }
 
-  // 10 MB limit
   if (file.size > 10 * 1024 * 1024) {
     return { success: false, error: 'File exceeds 10 MB limit' }
   }
@@ -38,19 +46,16 @@ export async function uploadToStorage(
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = `uploads/${user.id}/${timestamp}_${safeName}`
 
-  // Create bucket if it doesn't exist yet
-  const { data: buckets } = await supabase.storage.listBuckets()
-  if (!buckets?.find(b => b.name === 'attachments')) {
-    await supabase.storage.createBucket('attachments', { public: true })
-  }
+  // Use service-role client so storage RLS is bypassed (public bucket INSERT still needs a policy)
+  const admin = getAdminClient()
 
-  const { error } = await supabase.storage
+  const { error } = await admin.storage
     .from('attachments')
     .upload(path, file, { cacheControl: '3600', upsert: false })
 
   if (error) return { success: false, error: error.message }
 
-  const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(path)
+  const { data: { publicUrl } } = admin.storage.from('attachments').getPublicUrl(path)
 
   return {
     success: true,
@@ -67,11 +72,11 @@ export async function uploadToStorage(
 export async function saveAttachments(records: AttachmentRecord[]): Promise<ActionResult<void>> {
   if (!records.length) return { success: true, data: undefined }
 
-  const supabase = await createClient()
   const user = await getCurrentUser()
   if (!user) return { success: false, error: 'Unauthorized' }
 
-  const { error } = await supabase.from('attachments').insert(
+  const admin = getAdminClient()
+  const { error } = await admin.from('attachments').insert(
     records.map(r => ({
       uploaded_by: user.id,
       entity_type: r.entity_type,
