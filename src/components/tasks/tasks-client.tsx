@@ -231,56 +231,58 @@ export function TasksClient({ tasks, users, canAssign, canUpload, canComment, cu
             return (
               <Card key={task.id} className={isOverdue ? 'border-red-200' : ''}>
                 <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${priorityColor(task.priority)}`}>{task.priority}</span>
-                        {isOverdue && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">Overdue</span>}
-                        <h3 className="font-medium text-gray-900">{task.title}</h3>
-                        {task.attachments.length > 0 && (
-                          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">
-                            📎 {task.attachments.length}
-                          </span>
-                        )}
-                      </div>
-                      {!isExpanded && task.description && (
-                        <p className="mb-2 text-sm text-gray-500 line-clamp-2">{task.description}</p>
-                      )}
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Avatar name={task.assignee.name} src={task.assignee.avatar_url} size="sm" />
-                          {task.assignee.name}
-                        </span>
-                        <span>by {task.assigner.name}</span>
-                        {task.deadline && (
-                          <span className={isOverdue ? 'text-red-500 font-medium' : ''}>Due {formatDate(task.deadline)}</span>
-                        )}
-                      </div>
-                    </div>
+                  {/* Badges row */}
+                  <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${priorityColor(task.priority)}`}>{task.priority}</span>
+                    {isOverdue && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">Overdue</span>}
+                    {task.attachments.length > 0 && (
+                      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">📎 {task.attachments.length}</span>
+                    )}
+                  </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <select
-                        value={task.status}
-                        onChange={e => handleStatusChange(task.id, e.target.value)}
-                        className={`rounded-full border-0 px-2 py-1 text-xs font-medium focus:ring-2 focus:ring-indigo-500 ${statusColor(task.status)}`}
-                        disabled={isPending}
-                      >
-                        {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <button onClick={() => setDetailTask(task)} className="rounded p-1 text-gray-400 hover:text-indigo-500 transition-colors" title="View details">
-                        <Maximize2 size={14} />
+                  {/* Title */}
+                  <h3 className="mb-1.5 font-medium text-gray-900 leading-snug">{task.title}</h3>
+
+                  {/* Description preview */}
+                  {!isExpanded && task.description && (
+                    <p className="mb-2 text-sm text-gray-500 line-clamp-2">{task.description}</p>
+                  )}
+
+                  {/* Meta row */}
+                  <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <Avatar name={task.assignee.name} src={task.assignee.avatar_url} size="sm" />
+                      {task.assignee.name}
+                    </span>
+                    <span>by {task.assigner.name}</span>
+                    {task.deadline && (
+                      <span className={isOverdue ? 'text-red-500 font-medium' : ''}>Due {formatDate(task.deadline)}</span>
+                    )}
+                  </div>
+
+                  {/* Action row — full width on mobile */}
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={task.status}
+                      onChange={e => handleStatusChange(task.id, e.target.value)}
+                      className={`flex-1 rounded-full border-0 px-2 py-1 text-xs font-medium focus:ring-2 focus:ring-indigo-500 sm:flex-none ${statusColor(task.status)}`}
+                      disabled={isPending}
+                    >
+                      {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <button onClick={() => setDetailTask(task)} className="rounded p-1.5 text-gray-400 hover:text-indigo-500 transition-colors" title="View details">
+                      <Maximize2 size={15} />
+                    </button>
+                    {(task.description || task.attachments.length > 0) && (
+                      <button onClick={() => toggleExpand(task.id)} className="rounded p-1.5 text-gray-400 hover:text-gray-600 transition-colors">
+                        {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                       </button>
-                      {(task.description || task.attachments.length > 0) && (
-                        <button onClick={() => toggleExpand(task.id)} className="rounded p-1 text-gray-400 hover:text-gray-600 transition-colors">
-                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </button>
-                      )}
-                      {canAssign && (
-                        <button onClick={() => setConfirmId(task.id)} className="rounded p-1 text-gray-400 hover:text-red-500 transition-colors" disabled={isPending}>
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
+                    )}
+                    {canAssign && (
+                      <button onClick={() => setConfirmId(task.id)} className="rounded p-1.5 text-gray-400 hover:text-red-500 transition-colors" disabled={isPending}>
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </div>
 
                   {isExpanded && (
