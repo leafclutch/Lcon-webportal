@@ -7,7 +7,7 @@ import { RichInput, type PendingAttachment } from '@/components/shared/rich-inpu
 import { LinkText } from '@/components/shared/link-text'
 import { sendMessage, editMessage, deleteMessage } from '@/actions/messages'
 import { createGroup, sendGroupMessage, markGroupMessagesRead, deleteGroup } from '@/actions/groups'
-import { saveAttachments } from '@/actions/attachments'
+import { saveAttachments, getAttachments } from '@/actions/attachments'
 import { formatRelative } from '@/lib/utils'
 import { Send, MessageCircle, FileText, Link2, File, Users, Plus, X, Check, CheckCheck, Trash2, Pencil, MailOpen, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -129,6 +129,16 @@ export function MessagesClient({
         if (prev.some(m => m.id === raw.id)) return prev
         return [...prev, { ...raw, sender: usersById.current[raw.sender_id] ?? { id: raw.sender_id, name: 'Unknown', avatar_url: null }, attachments: [] }]
       })
+      // Attachments are saved after the message insert — fetch them once they're ready
+      setTimeout(() => {
+        getAttachments('message', [raw.id]).then(atts => {
+          if (atts.length > 0) {
+            setAllMessages(prev => prev.map(m =>
+              m.id === raw.id ? { ...m, attachments: atts as MsgAttachment[] } : m
+            ))
+          }
+        })
+      }, 1000)
     }
 
     const handleDmUpdate = (payload: { new: Record<string, unknown> }) => {
@@ -161,6 +171,15 @@ export function MessagesClient({
         if (prev.some(m => m.id === raw.id)) return prev
         return [...prev, { ...raw, sender: usersById.current[raw.sender_id] ?? { id: raw.sender_id, name: 'Unknown', avatar_url: null }, readBy: [], attachments: [] }]
       })
+      setTimeout(() => {
+        getAttachments('group_message', [raw.id]).then(atts => {
+          if (atts.length > 0) {
+            setAllGroupMessages(prev => prev.map(m =>
+              m.id === raw.id ? { ...m, attachments: atts as MsgAttachment[] } : m
+            ))
+          }
+        })
+      }, 1000)
     }
 
     const handleReadInsert = (payload: { new: Record<string, unknown> }) => {
@@ -245,6 +264,12 @@ export function MessagesClient({
       const res = await sendMessage({ receiver_id: selectedUser.id, content: dmText.trim() || undefined, voice_url: voiceAtt?.url })
       if (res.success && fileAtts.length) {
         await saveAttachments(fileAtts.map(a => ({ entity_type: 'message' as const, entity_id: res.data.id, type: a.type, name: a.name, url: a.url, mime_type: a.mimeType, size_bytes: a.sizeBytes })))
+        // Show attachment immediately for sender (realtime adds message with attachments:[])
+        setAllMessages(prev => prev.map(m =>
+          m.id === res.data.id
+            ? { ...m, attachments: fileAtts.map((a, i) => ({ id: `local-${Date.now()}-${i}`, entity_id: res.data.id, type: a.type, name: a.name, url: a.url, mime_type: a.mimeType ?? null })) }
+            : m
+        ))
       }
       setDmText(''); setDmAttachments([])
     })
@@ -290,6 +315,11 @@ export function MessagesClient({
       const res = await sendGroupMessage(selectedGroup.id, groupText.trim() || undefined, voiceAtt?.url)
       if (res.success && fileAtts.length) {
         await saveAttachments(fileAtts.map(a => ({ entity_type: 'group_message' as const, entity_id: res.data.id, type: a.type, name: a.name, url: a.url, mime_type: a.mimeType, size_bytes: a.sizeBytes })))
+        setAllGroupMessages(prev => prev.map(m =>
+          m.id === res.data.id
+            ? { ...m, attachments: fileAtts.map((a, i) => ({ id: `local-${Date.now()}-${i}`, entity_id: res.data.id, type: a.type, name: a.name, url: a.url, mime_type: a.mimeType ?? null })) }
+            : m
+        ))
       }
       setGroupText(''); setGroupAttachments([])
     })
