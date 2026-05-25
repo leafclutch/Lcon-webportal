@@ -32,19 +32,20 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       />
       <div
         className={cn(
-          'relative z-10 w-full max-w-md rounded-2xl bg-white shadow-xl',
+          'relative z-10 flex w-full max-w-md flex-col rounded-2xl bg-white shadow-xl',
+          'max-h-[calc(100dvh-2rem)]',
           className
         )}
       >
         {title && (
-          <div className="flex items-center justify-between border-b border-gray-100 p-6 pb-4">
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-100 p-6 pb-4">
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
               <X size={20} />
             </button>
           </div>
         )}
-        <div className="p-6 pt-4">{children}</div>
+        <div className="overflow-y-auto p-6 pt-4">{children}</div>
       </div>
     </div>
   )

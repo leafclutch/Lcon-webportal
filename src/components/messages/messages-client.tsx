@@ -455,7 +455,16 @@ export function MessagesClient({
                 <ArrowLeft size={18} />
               </button>
               <Avatar name={selectedUser.name} src={selectedUser.avatar_url} />
-              <p className="font-medium text-gray-900">{selectedUser.name}</p>
+              <p className="font-medium text-gray-900 flex-1 min-w-0 truncate">{selectedUser.name}</p>
+              {dmConversation.some(m => m.sender_id === selectedUser.id && m.is_read && !m.deleted_at) && (
+                <button
+                  onClick={() => handleMarkUnread(selectedUser.id)}
+                  title="Mark as unread"
+                  className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-indigo-500 transition-colors"
+                >
+                  <MailOpen size={15} />
+                </button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-1">
               {dmConversation.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello!</p>}
