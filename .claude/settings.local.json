@@ -15,7 +15,14 @@
       "Bash(npx --prefix /home/sid/leafclutch/Lcon-webportal tsc --noEmit)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
       "Bash(vercel --version)",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(nslookup lcon.leafclutch.com.np)",
+      "Bash(nslookup leafclutch.com.np)",
+      "Bash(nslookup lcon.leafclutch.com.np 8.8.8.8)",
+      "Bash(sudo resolvectl flush-caches)",
+      "Bash(sudo systemd-resolve --flush-caches)",
+      "Bash(xargs cat)",
+      "Bash(npx wrangler *)"
     ]
   }
 }
