@@ -23,7 +23,7 @@
   // Production custom domain
   "routes": [
     {
-      "pattern": "team.leafclutch.com.np",
+      "pattern": "lcon.leafclutch.com.np",
       "custom_domain": true
     }
   ],
