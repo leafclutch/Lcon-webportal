@@ -521,75 +521,108 @@ export function AttendanceClient({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="pb-2 text-left font-medium text-gray-500">User</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Date</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Clock In</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Clock Out</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Working Hrs</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Break Hrs</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Type</th>
-                      <th className="pb-2 text-left font-medium text-gray-500">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {allLogs.length === 0 ? (
-                      <tr><td colSpan={8} className="py-6 text-center text-gray-400">No records found</td></tr>
-                    ) : (
-                      allLogs.map(log => {
-                        const u = userMap[log.user_id]
-                        const isOnBreak = activeBreakSet.has(log.user_id) && log.date === today
-                        return (
-                          <tr key={log.id}>
-                            <td className="py-2">
-                              <div className="flex items-center gap-2">
-                                <Avatar name={u?.name ?? '?'} src={u?.avatar_url ?? null} size="sm" />
-                                <div>
-                                  <span className="font-medium text-gray-800">{u?.name ?? '—'}</span>
-                                  {isOnBreak && (
-                                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600 font-medium">
-                                      <Coffee size={10} />
-                                      On Break
-                                    </span>
-                                  )}
+              {allLogs.length === 0 ? (
+                <p className="py-6 text-center text-sm text-gray-400">No records found</p>
+              ) : (
+                <>
+                  {/* Mobile cards */}
+                  <div className="space-y-2 md:hidden">
+                    {allLogs.map(log => {
+                      const u = userMap[log.user_id]
+                      const isOnBreak = activeBreakSet.has(log.user_id) && log.date === today
+                      return (
+                        <div key={log.id} className="rounded-lg border border-gray-100 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Avatar name={u?.name ?? '?'} src={u?.avatar_url ?? null} size="sm" />
+                              <span className="font-medium text-gray-800 text-sm">{u?.name ?? '—'}</span>
+                              {isOnBreak && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600 font-medium">
+                                  <Coffee size={10} />On Break
+                                </span>
+                              )}
+                            </div>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>{log.status}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 mb-2">{log.date} · <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${log.type === 'remote' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-600 bg-gray-100'}`}>{log.type === 'remote' ? 'Remote' : 'Onsite'}</span></p>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Clock In</p>
+                              <p className="text-gray-700">{log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Clock Out</p>
+                              <p className="text-gray-700">{log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Working Hrs</p>
+                              <p className="font-mono text-xs text-gray-700">{calcWorkingHours(log.tap_in_time, log.tap_out_time, log.breaks ?? [])}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Break Hrs</p>
+                              <p className="font-mono text-xs text-gray-700">{calcBreakHours(log.breaks ?? [])}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Desktop table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">User</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Date</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Clock In</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Clock Out</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Working Hrs</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Break Hrs</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Type</th>
+                          <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {allLogs.map(log => {
+                          const u = userMap[log.user_id]
+                          const isOnBreak = activeBreakSet.has(log.user_id) && log.date === today
+                          return (
+                            <tr key={log.id}>
+                              <td className="py-2">
+                                <div className="flex items-center gap-2">
+                                  <Avatar name={u?.name ?? '?'} src={u?.avatar_url ?? null} size="sm" />
+                                  <div>
+                                    <span className="font-medium text-gray-800">{u?.name ?? '—'}</span>
+                                    {isOnBreak && (
+                                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600 font-medium">
+                                        <Coffee size={10} />On Break
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="py-2 text-gray-600">{log.date}</td>
-                            <td className="py-2 text-gray-600">
-                              {log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}
-                            </td>
-                            <td className="py-2 text-gray-600">
-                              {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
-                            </td>
-                            <td className="py-2 font-mono text-gray-700 text-xs">
-                              {calcWorkingHours(log.tap_in_time, log.tap_out_time, log.breaks ?? [])}
-                            </td>
-                            <td className="py-2 font-mono text-gray-700 text-xs">
-                              {calcBreakHours(log.breaks ?? [])}
-                            </td>
-                            <td className="py-2">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${log.type === 'remote' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-600 bg-gray-100'}`}>
-                                {log.type === 'remote' ? (
-                                  <span className="flex items-center gap-1"><Wifi size={10} />Remote</span>
-                                ) : 'Onsite'}
-                              </span>
-                            </td>
-                            <td className="py-2">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>
-                                {log.status}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                              </td>
+                              <td className="py-2 text-gray-600 whitespace-nowrap">{log.date}</td>
+                              <td className="py-2 text-gray-600 whitespace-nowrap">{log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}</td>
+                              <td className="py-2 text-gray-600 whitespace-nowrap">{log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}</td>
+                              <td className="py-2 font-mono text-gray-700 text-xs whitespace-nowrap">{calcWorkingHours(log.tap_in_time, log.tap_out_time, log.breaks ?? [])}</td>
+                              <td className="py-2 font-mono text-gray-700 text-xs whitespace-nowrap">{calcBreakHours(log.breaks ?? [])}</td>
+                              <td className="py-2">
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${log.type === 'remote' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-600 bg-gray-100'}`}>
+                                  {log.type === 'remote' ? <span className="flex items-center gap-1"><Wifi size={10} />Remote</span> : 'Onsite'}
+                                </span>
+                              </td>
+                              <td className="py-2">
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>{log.status}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -605,51 +638,77 @@ function AttendanceTable({ logs, breaks }: { logs: AttendanceLog[]; breaks: Atte
     return acc
   }, {})
 
+  if (logs.length === 0) {
+    return <p className="py-6 text-center text-sm text-gray-400">No attendance records</p>
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-100">
-            <th className="pb-2 text-left font-medium text-gray-500">Date</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Clock In</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Clock Out</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Working Hrs</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Break Hrs</th>
-            <th className="pb-2 text-left font-medium text-gray-500">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-50">
-          {logs.length === 0 ? (
-            <tr><td colSpan={6} className="py-6 text-center text-gray-400">No attendance records</td></tr>
-          ) : (
-            logs.map(log => {
+    <>
+      {/* Mobile cards */}
+      <div className="space-y-2 md:hidden">
+        {logs.map(log => {
+          const logBreaks = breakMap[log.id] ?? []
+          return (
+            <div key={log.id} className="rounded-lg border border-gray-100 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-gray-900 text-sm">{log.date}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>{log.status}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">Clock In</p>
+                  <p className="text-gray-700">{log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">Clock Out</p>
+                  <p className="text-gray-700">{log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">Working Hrs</p>
+                  <p className="font-mono text-xs text-gray-700">{calcWorkingHours(log.tap_in_time, log.tap_out_time, logBreaks)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">Break Hrs</p>
+                  <p className="font-mono text-xs text-gray-700">{calcBreakHours(logBreaks)}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Date</th>
+              <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Clock In</th>
+              <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Clock Out</th>
+              <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Working Hrs</th>
+              <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Break Hrs</th>
+              <th className="pb-2 text-left font-medium text-gray-500 whitespace-nowrap">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {logs.map(log => {
               const logBreaks = breakMap[log.id] ?? []
               return (
                 <tr key={log.id}>
-                  <td className="py-2 font-medium">{log.date}</td>
-                  <td className="py-2 text-gray-600">
-                    {log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}
-                  </td>
-                  <td className="py-2 text-gray-600">
-                    {log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}
-                  </td>
-                  <td className="py-2 font-mono text-gray-700 text-xs">
-                    {calcWorkingHours(log.tap_in_time, log.tap_out_time, logBreaks)}
-                  </td>
-                  <td className="py-2 font-mono text-gray-700 text-xs">
-                    {calcBreakHours(logBreaks)}
-                  </td>
+                  <td className="py-2 font-medium whitespace-nowrap">{log.date}</td>
+                  <td className="py-2 text-gray-600 whitespace-nowrap">{log.tap_in_time ? new Date(log.tap_in_time).toLocaleTimeString() : '—'}</td>
+                  <td className="py-2 text-gray-600 whitespace-nowrap">{log.tap_out_time ? new Date(log.tap_out_time).toLocaleTimeString() : '—'}</td>
+                  <td className="py-2 font-mono text-gray-700 text-xs whitespace-nowrap">{calcWorkingHours(log.tap_in_time, log.tap_out_time, logBreaks)}</td>
+                  <td className="py-2 font-mono text-gray-700 text-xs whitespace-nowrap">{calcBreakHours(logBreaks)}</td>
                   <td className="py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>
-                      {log.status}
-                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(log.status)}`}>{log.status}</span>
                   </td>
                 </tr>
               )
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }

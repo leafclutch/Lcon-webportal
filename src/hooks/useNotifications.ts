@@ -18,7 +18,8 @@ export function useNotifications(userId: string | undefined) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.error('[useNotifications] fetch error:', error.message)
         if (data) setNotifications(data as Notification[])
       })
 

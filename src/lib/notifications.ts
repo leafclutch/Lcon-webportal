@@ -1,4 +1,13 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
+
+// Service role client — bypasses RLS, safe for server-only notification inserts
+function getAdminClient() {
+  return createSupabaseClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 type NotificationType = 'message' | 'task' | 'warning' | 'leave' | 'announcement' | 'reminder' | 'system'
 
@@ -13,8 +22,8 @@ interface NotificationInput {
 
 export async function createNotification(input: NotificationInput): Promise<void> {
   try {
-    const supabase = await createClient()
-    await supabase.from('notifications').insert({
+    const supabase = getAdminClient()
+    const { error } = await supabase.from('notifications').insert({
       user_id: input.user_id,
       title: input.title,
       body: input.body ?? null,
@@ -22,8 +31,9 @@ export async function createNotification(input: NotificationInput): Promise<void
       entity_type: input.entity_type ?? null,
       entity_id: input.entity_id ?? null,
     })
-  } catch {
-    // Notifications are best-effort — never block main flow
+    if (error) console.error('[createNotification]', error.message, input)
+  } catch (e) {
+    console.error('[createNotification] unexpected error', e)
   }
 }
 
@@ -32,7 +42,7 @@ export async function createNotificationsForAllUsers(
   excludeUserId?: string
 ): Promise<void> {
   try {
-    const supabase = await createClient()
+    const supabase = getAdminClient()
     let query = supabase.from('users').select('id').eq('is_approved', true)
     if (excludeUserId) query = query.neq('id', excludeUserId)
 

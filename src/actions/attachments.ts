@@ -38,6 +38,12 @@ export async function uploadToStorage(
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = `uploads/${user.id}/${timestamp}_${safeName}`
 
+  // Create bucket if it doesn't exist yet
+  const { data: buckets } = await supabase.storage.listBuckets()
+  if (!buckets?.find(b => b.name === 'attachments')) {
+    await supabase.storage.createBucket('attachments', { public: true })
+  }
+
   const { error } = await supabase.storage
     .from('attachments')
     .upload(path, file, { cacheControl: '3600', upsert: false })

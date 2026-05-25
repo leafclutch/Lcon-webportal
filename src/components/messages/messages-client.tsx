@@ -9,7 +9,7 @@ import { sendMessage, editMessage, deleteMessage } from '@/actions/messages'
 import { createGroup, sendGroupMessage, markGroupMessagesRead, deleteGroup } from '@/actions/groups'
 import { saveAttachments } from '@/actions/attachments'
 import { formatRelative } from '@/lib/utils'
-import { Send, MessageCircle, FileText, Link2, File, Users, Plus, X, Check, CheckCheck, Trash2, Pencil, MailOpen } from 'lucide-react'
+import { Send, MessageCircle, FileText, Link2, File, Users, Plus, X, Check, CheckCheck, Trash2, Pencil, MailOpen, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 
@@ -348,11 +348,17 @@ export function MessagesClient({
   const canSendDm = (dmText.trim() || dmAttachments.length > 0) && !dmAttachments.some(a => a.uploading)
   const canSendGroup = (groupText.trim() || groupAttachments.length > 0) && !groupAttachments.some(a => a.uploading)
 
+  const isConversationOpen = selectedUser !== null || selectedGroup !== null
+
   return (
     <div className="flex h-[calc(100vh-10rem)] overflow-hidden rounded-xl border border-gray-200 bg-white">
 
       {/* ── Left sidebar ────────────────────────────────────────────── */}
-      <div className="flex w-64 shrink-0 flex-col border-r border-gray-100 lg:w-72">
+      <div className={cn(
+        'flex shrink-0 flex-col border-r border-gray-100',
+        'w-full md:w-64 lg:w-72',
+        isConversationOpen ? 'hidden md:flex' : 'flex'
+      )}>
         {/* Tabs */}
         <div className="flex border-b border-gray-100">
           <button onClick={() => setTab('direct')} className={cn('flex-1 py-3 text-sm font-medium transition-colors', tab === 'direct' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700')}>
@@ -436,12 +442,18 @@ export function MessagesClient({
       </div>
 
       {/* ── Chat area ───────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className={cn(
+        'flex flex-1 flex-col min-w-0',
+        isConversationOpen ? 'flex' : 'hidden md:flex'
+      )}>
 
         {/* Direct message chat */}
         {tab === 'direct' && selectedUser ? (
           <>
             <div className="flex items-center gap-3 border-b border-gray-100 p-4">
+              <button onClick={() => setSelectedUser(null)} className="md:hidden rounded-full p-1 text-gray-500 hover:bg-gray-100">
+                <ArrowLeft size={18} />
+              </button>
               <Avatar name={selectedUser.name} src={selectedUser.avatar_url} />
               <p className="font-medium text-gray-900">{selectedUser.name}</p>
             </div>
@@ -533,7 +545,7 @@ export function MessagesClient({
             <div className="border-t border-gray-100 p-3">
               <div className="flex items-end gap-2">
                 {canUpload ? (
-                  <RichInput value={dmText} onChange={setDmText} attachments={dmAttachments} onAttachmentsChange={setDmAttachments} placeholder="Type a message…" disabled={isPending} rows={1} className="flex-1" />
+                  <RichInput value={dmText} onChange={setDmText} attachments={dmAttachments} onAttachmentsChange={setDmAttachments} onSubmit={handleSendDm} placeholder="Type a message…" disabled={isPending} rows={1} className="flex-1" />
                 ) : (
                   <input value={dmText} onChange={e => setDmText(e.target.value)} placeholder="Type a message…"
                     className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
@@ -548,6 +560,9 @@ export function MessagesClient({
           /* Group chat */
           <>
             <div className="flex items-center gap-3 border-b border-gray-100 p-4">
+              <button onClick={() => setSelectedGroup(null)} className="md:hidden rounded-full p-1 text-gray-500 hover:bg-gray-100">
+                <ArrowLeft size={18} />
+              </button>
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 shrink-0">
                 <Users size={16} />
               </div>
@@ -616,7 +631,7 @@ export function MessagesClient({
             <div className="border-t border-gray-100 p-3">
               <div className="flex items-end gap-2">
                 {canUpload ? (
-                  <RichInput value={groupText} onChange={setGroupText} attachments={groupAttachments} onAttachmentsChange={setGroupAttachments} placeholder="Message group…" disabled={isPending} rows={1} className="flex-1" />
+                  <RichInput value={groupText} onChange={setGroupText} attachments={groupAttachments} onAttachmentsChange={setGroupAttachments} onSubmit={handleSendGroup} placeholder="Message group…" disabled={isPending} rows={1} className="flex-1" />
                 ) : (
                   <input value={groupText} onChange={e => setGroupText(e.target.value)} placeholder="Message group…"
                     className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
